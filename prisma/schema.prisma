@@ -1,0 +1,272 @@
+// Prisma schema for Personal-24 Platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Пользователи системы (администраторы, менеджеры)
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      UserRole @default(MANAGER)
+  avatar    String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // 2FA fields
+  twoFactorEnabled  Boolean  @default(false)
+  twoFactorSecret   String?  // Encrypted TOTP secret
+  backupCodes       String?  // JSON array of hashed backup codes
+  
+  orders    Order[]  @relation("OrderCreator")
+  bots      Bot[]    @relation("BotOwner")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+}
+
+// Telegram боты
+model Bot {
+  id          String   @id @default(cuid())
+  name        String
+  token       String   @unique
+  description String?
+  city        String
+  avatar      String?
+  isActive    Boolean  @default(true)
+  subscriberCount Int   @default(0)
+  ownerId     String
+  owner       User     @relation("BotOwner", fields: [ownerId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  orders      Order[]
+  contacts    Contact[]
+}
+
+// Сотрудники (временный персонал)
+model Employee {
+  id           String   @id @default(cuid())
+  firstName    String
+  lastName     String
+  middleName   String?
+  phone        String
+  phone2       String?
+  telegramId   String?
+  rating       Float    @default(0)
+  status       EmployeeStatus @default(AVAILABLE)
+  avatar       String?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  tags         EmployeeTag[] @relation("EmployeeTags")
+  orderResponses OrderResponse[]
+  workHistory  WorkHistory[]
+  financialRecords FinancialRecord[]
+  payments     Payment[]
+}
+
+enum EmployeeStatus {
+  AVAILABLE   // Свободен
+  WORKING     // В работе
+  BANNED      // Забанен
+}
+
+// Теги для сотрудников
+model EmployeeTag {
+  id          String   @id @default(cuid())
+  name        String
+  color       String   @default("#6B7280")
+  type        TagType  @default(SKILL)
+  createdAt   DateTime @default(now())
+  
+  employees   Employee[] @relation("EmployeeTags")
+}
+
+enum TagType {
+  SKILL       // Навык (грузчик, стройплощадка)
+  STATUS      // Статус (черный список)
+}
+
+// Шаблоны заказов
+model OrderTemplate {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?
+  workType      String
+  requiredPeople Int    @default(1)
+  checklists    String?  // JSON array
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Заказы
+model Order {
+  id              String   @id @default(cuid())
+  title           String
+  description     String?
+  
+  // Клиент
+  clientName      String
+  clientPhone     String
+  
+  // Адрес
+  district        String?
+  street          String
+  houseNumber     String
+  officeNumber    String?
+  
+  // Требования
+  workDate        DateTime
+  workTime        String
+  workType        String
+  requiredPeople  Int      @default(1)
+  pricePerPerson  Float
+  checklists      String?  // JSON array
+  
+  // Рассылка
+  publishType     PublishType @default(IMMEDIATE)
+  publishAt       DateTime?
+  
+  // Статус
+  status          OrderStatus @default(DRAFT)
+  paymentStatus   PaymentStatus @default(NOT_PAID)
+  
+  // Связи
+  botId           String
+  bot             Bot      @relation(fields: [botId], references: [id])
+  creatorId       String
+  creator         User     @relation("OrderCreator", fields: [creatorId], references: [id])
+  templateId      String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  responses       OrderResponse[]
+  financialRecords FinancialRecord[]
+}
+
+enum PublishType {
+  IMMEDIATE   // Немедленная публикация
+  SCHEDULED   // Отложенная
+}
+
+enum OrderStatus {
+  DRAFT       // Черновик
+  PUBLISHED   // Опубликовано
+  IN_PROGRESS // В работе
+  COMPLETED   // Завершен
+  CANCELLED   // Отменен
+}
+
+enum PaymentStatus {
+  NOT_PAID    // Не оплачено
+  PARTIAL     // Частично
+  PAID        // Оплачено
+}
+
+// Отклики на заказы
+model OrderResponse {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id])
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  status      ResponseStatus @default(PENDING)
+  respondedAt DateTime @default(now())
+  assignedAt  DateTime?
+}
+
+enum ResponseStatus {
+  PENDING     // Ожидает
+  ASSIGNED    // Назначен
+  REJECTED    // Отклонен
+  COMPLETED   // Завершил
+}
+
+// Контакты (пользователи ботов)
+model Contact {
+  id           String   @id @default(cuid())
+  telegramId   String   @unique
+  firstName    String?
+  lastName     String?
+  username     String?
+  phone        String?
+  status       ContactStatus @default(NEW)
+  botId        String
+  bot          Bot      @relation(fields: [botId], references: [id])
+  registeredAt DateTime @default(now())
+  approvedAt   DateTime?
+  notes        String?
+}
+
+enum ContactStatus {
+  NEW         // Новый
+  APPROVED    // Одобрен
+  BANNED      // Забанен
+}
+
+// Финансовые записи
+model FinancialRecord {
+  id          String   @id @default(cuid())
+  type        FinanceType
+  amount      Float
+  description String?
+  orderId     String?
+  order       Order?   @relation(fields: [orderId], references: [id])
+  employeeId  String?
+  employee    Employee? @relation(fields: [employeeId], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+enum FinanceType {
+  INCOME      // Выручка
+  EXPENSE     // Расход (выплата сотруднику)
+}
+
+// История работы
+model WorkHistory {
+  id          String   @id @default(cuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  orderId     String
+  orderTitle  String
+  workDate    DateTime
+  rating      Float?
+  notes       String?
+  createdAt   DateTime @default(now())
+}
+
+// Выплаты сотрудникам
+model Payment {
+  id          String            @id @default(cuid())
+  employeeId  String
+  employee    Employee          @relation(fields: [employeeId], references: [id])
+  amount      Float
+  status      PayoutStatus      @default(PENDING)
+  periodStart DateTime          // Начало периода выплаты
+  periodEnd   DateTime          // Конец периода выплаты
+  description String?
+  paidAt      DateTime?         // Дата фактической выплаты
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  
+  orderIds    String?           // JSON array of order IDs included in payment
+}
+
+enum PayoutStatus {
+  PENDING     // Ожидает выплаты
+  PAID        // Выплачено
+  CANCELLED   // Отменено
+}
