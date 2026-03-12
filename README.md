@@ -1,141 +1,56 @@
-# 🚀 Welcome to Z.ai Code Scaffold
+# <img src="public/logo.png" width="40" height="40" align="center" /> Staffy — Платформа управления временным персоналом
 
-A modern, production-ready web application scaffold powered by cutting-edge technologies, designed to accelerate your development with [Z.ai](https://chat.z.ai)'s AI-powered coding assistance.
+**Staffy** — это современная SaaS-система для автоматизации найма и управления временным персоналом (грузчики, разнорабочие, курьеры) через сеть Telegram-ботов.
 
-## ✨ Technology Stack
+## ✨ Ключевые возможности
 
-This scaffold provides a robust foundation built with:
+### 🤖 Управление Telegram-ботами
+*   **Multi-city**: Подключение неограниченного количества ботов для разных городов через один интерфейс.
+*   **Авто-регистрация**: Удобная привязка ботов через API Token (BotFather) прямо из панели управления.
+*   **Рассылки**: Мгновенная публикация заказов во все или выбранные боты.
 
-### 🎯 Core Framework
-- **⚡ Next.js 16** - The React framework for production with App Router
-- **📘 TypeScript 5** - Type-safe JavaScript for better developer experience
-- **🎨 Tailwind CSS 4** - Utility-first CSS framework for rapid UI development
+### 📋 CRM и Управление заказами
+*   **Real-time Dashboard**: Отслеживание заказов, откликов и действий работников в реальном времени (WebSockets).
+*   **Шаблоны**: Быстрое создание повторяющихся заказов.
+*   **Чек-листы**: Конфигурируемые требования для каждой смены (трезвость, форма, инвентарь).
+*   **База сотрудников**: Детальные профили, тегирование («VIP», «Черный список») и история работ.
 
-### 🧩 UI Components & Styling
-- **🧩 shadcn/ui** - High-quality, accessible components built on Radix UI
-- **🎯 Lucide React** - Beautiful & consistent icon library
-- **🌈 Framer Motion** - Production-ready motion library for React
-- **🎨 Next Themes** - Perfect dark mode in 2 lines of code
+### 💰 Финансы и Аналитика
+*   **Авто-расчет**: Подсчет выручки, выплат сотрудникам и чистой прибыли по каждому заказу.
+*   **Экспорт отчетов**: Выгрузка данных в CSV и Excel (XLSX).
 
-### 📋 Forms & Validation
-- **🎣 React Hook Form** - Performant forms with easy validation
-- **✅ Zod** - TypeScript-first schema validation
+### 🛡️ Безопасность и ФЗ-152
+*   **Безопасный вход**: Двухфакторная аутентификация (2FA) для менеджеров.
+*   **Защита данных**: Шифрование персональных данных в БД.
+*   **152-ФЗ**: Встроенные механизмы сбора согласий и аудита доступа (в разработке).
 
-### 🔄 State Management & Data Fetching
-- **🐻 Zustand** - Simple, scalable state management
-- **🔄 TanStack Query** - Powerful data synchronization for React
-- **🌐 Fetch** - Promise-based HTTP request
+## 🛠 Технологический стек
 
-### 🗄️ Database & Backend
-- **🗄️ Prisma** - Next-generation TypeScript ORM
-- **🔐 NextAuth.js** - Complete open-source authentication solution
+*   **Frontend**: Next.js 15+, React, Tailwind CSS, shadcn/ui
+*   **Backend**: Prisma ORM, NextAuth.js, Telegraf (Telegram Bot API)
+*   **Database**: PostgreSQL
+*   **Real-time**: Socket.io / WebSockets
+*   **Инфраструктура**: Docker, Redis (очереди)
 
-### 🎨 Advanced UI Features
-- **📊 TanStack Table** - Headless UI for building tables and datagrids
-- **🖱️ DND Kit** - Modern drag and drop toolkit for React
-- **📊 Recharts** - Redefined chart library built with React and D3
-- **🖼️ Sharp** - High performance image processing
+## 🚀 Быстрый старт
 
-### 🌍 Internationalization & Utilities
-- **🌍 Next Intl** - Internationalization library for Next.js
-- **📅 Date-fns** - Modern JavaScript date utility library
-- **🪝 ReactUse** - Collection of essential React hooks for modern development
+1. **Установка зависимостей**:
+   ```bash
+   npm install
+   ```
 
-## 🎯 Why This Scaffold?
+2. **Настройка окружения**:
+   Скопируйте `.env.example` в `.env` и укажите данные вашей базы данных PostgreSQL и Token бота.
 
-- **🏎️ Fast Development** - Pre-configured tooling and best practices
-- **🎨 Beautiful UI** - Complete shadcn/ui component library with advanced interactions
-- **🔒 Type Safety** - Full TypeScript configuration with Zod validation
-- **📱 Responsive** - Mobile-first design principles with smooth animations
-- **🗄️ Database Ready** - Prisma ORM configured for rapid backend development
-- **🔐 Auth Included** - NextAuth.js for secure authentication flows
-- **📊 Data Visualization** - Charts, tables, and drag-and-drop functionality
-- **🌍 i18n Ready** - Multi-language support with Next Intl
-- **🚀 Production Ready** - Optimized build and deployment settings
-- **🤖 AI-Friendly** - Structured codebase perfect for AI assistance
+3. **Запуск базы данных**:
+   ```bash
+   docker-compose up -d
+   ```
 
-## 🚀 Quick Start
-
-```bash
-# Install dependencies
-bun install
-
-# Start development server
-bun run dev
-
-# Build for production
-bun run build
-
-# Start production server
-bun start
-```
-
-Open [http://localhost:3000](http://localhost:3000) to see your application running.
-
-## 🤖 Powered by Z.ai
-
-This scaffold is optimized for use with [Z.ai](https://chat.z.ai) - your AI assistant for:
-
-- **💻 Code Generation** - Generate components, pages, and features instantly
-- **🎨 UI Development** - Create beautiful interfaces with AI assistance  
-- **🔧 Bug Fixing** - Identify and resolve issues with intelligent suggestions
-- **📝 Documentation** - Auto-generate comprehensive documentation
-- **🚀 Optimization** - Performance improvements and best practices
-
-Ready to build something amazing? Start chatting with Z.ai at [chat.z.ai](https://chat.z.ai) and experience the future of AI-powered development!
-
-## 📁 Project Structure
-
-```
-src/
-├── app/                 # Next.js App Router pages
-├── components/          # Reusable React components
-│   └── ui/             # shadcn/ui components
-├── hooks/              # Custom React hooks
-└── lib/                # Utility functions and configurations
-```
-
-## 🎨 Available Features & Components
-
-This scaffold includes a comprehensive set of modern web development tools:
-
-### 🧩 UI Components (shadcn/ui)
-- **Layout**: Card, Separator, Aspect Ratio, Resizable Panels
-- **Forms**: Input, Textarea, Select, Checkbox, Radio Group, Switch
-- **Feedback**: Alert, Toast (Sonner), Progress, Skeleton
-- **Navigation**: Breadcrumb, Menubar, Navigation Menu, Pagination
-- **Overlay**: Dialog, Sheet, Popover, Tooltip, Hover Card
-- **Data Display**: Badge, Avatar, Calendar
-
-### 📊 Advanced Data Features
-- **Tables**: Powerful data tables with sorting, filtering, pagination (TanStack Table)
-- **Charts**: Beautiful visualizations with Recharts
-- **Forms**: Type-safe forms with React Hook Form + Zod validation
-
-### 🎨 Interactive Features
-- **Animations**: Smooth micro-interactions with Framer Motion
-- **Drag & Drop**: Modern drag-and-drop functionality with DND Kit
-- **Theme Switching**: Built-in dark/light mode support
-
-### 🔐 Backend Integration
-- **Authentication**: Ready-to-use auth flows with NextAuth.js
-- **Database**: Type-safe database operations with Prisma
-- **API Client**: HTTP requests with Fetch + TanStack Query
-- **State Management**: Simple and scalable with Zustand
-
-### 🌍 Production Features
-- **Internationalization**: Multi-language support with Next Intl
-- **Image Optimization**: Automatic image processing with Sharp
-- **Type Safety**: End-to-end TypeScript with Zod validation
-- **Essential Hooks**: 100+ useful React hooks with ReactUse for common patterns
-
-## 🤝 Get Started with Z.ai
-
-1. **Clone this scaffold** to jumpstart your project
-2. **Visit [chat.z.ai](https://chat.z.ai)** to access your AI coding assistant
-3. **Start building** with intelligent code generation and assistance
-4. **Deploy with confidence** using the production-ready setup
+4. **Запуск в режиме разработки**:
+   ```bash
+   npm run dev
+   ```
 
 ---
-
-Built with ❤️ for the developer community. Supercharged by [Z.ai](https://chat.z.ai) 🚀
+Разработано для эффективного управления кадрами в эпоху Telegram. 🚀

@@ -37,7 +37,7 @@ export default function LoginPage() {
       } else {
         toast({
           title: "Успешный вход",
-          description: "Добро пожаловать в Personal-24",
+          description: "Добро пожаловать в Staffy",
         });
         router.push("/");
         router.refresh();
@@ -58,11 +58,11 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
-            <div className="p-3 rounded-xl bg-primary/10">
-              <Building2 className="h-8 w-8 text-primary" />
+            <div className="p-0 rounded-xl overflow-hidden bg-transparent border-none">
+              <img src="/logo.png" alt="Staffy Logo" className="h-20 w-auto" />
             </div>
           </div>
-          <CardTitle className="text-2xl text-center">Personal-24</CardTitle>
+          <CardTitle className="text-2xl text-center">Staffy</CardTitle>
           <CardDescription className="text-center">
             Войдите в систему управления персоналом
           </CardDescription>
@@ -105,10 +105,10 @@ export default function LoginPage() {
           <div className="mt-6 text-sm text-center text-muted-foreground">
             <p>Тестовые учетные данные:</p>
             <p className="mt-2">
-              <strong>Администратор:</strong> admin@personal24.ru / password
+              <strong>Администратор:</strong> admin@staffy.ru / password
             </p>
             <p>
-              <strong>Менеджер:</strong> manager@personal24.ru / password
+              <strong>Менеджер:</strong> manager@staffy.ru / password
             </p>
           </div>
         </CardContent>

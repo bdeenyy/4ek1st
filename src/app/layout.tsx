@@ -17,9 +17,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Personal-24 - Платформа управления персоналом",
+  title: "Staffy - Платформа управления персоналом",
   description: "SaaS-платформа для автоматизации процессов найма временного персонала через сеть Telegram-ботов",
   keywords: ["Персонал", "Найм", "Telegram", "Управление заказами", "CRM"],
+  icons: {
+    icon: "/logo.png",
+  },
 };
 
 export default function RootLayout({

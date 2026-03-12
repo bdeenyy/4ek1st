@@ -1,4 +1,4 @@
-# Work Log - Personal-24 Platform
+# Work Log - Staffy Platform
 
 ---
 Task ID: 1

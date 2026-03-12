@@ -29,7 +29,7 @@ export function generateTwoFactorSecret(email: string): {
   const secret = generateBase32Secret();
   
   // Create otpauth URL for QR code
-  const serviceName = encodeURIComponent("Personal-24");
+  const serviceName = encodeURIComponent("Staffy");
   const label = encodeURIComponent(email);
   const otpauthUrl = `otpauth://totp/${label}?secret=${secret}&issuer=${serviceName}&algorithm=SHA1&digits=6&period=30`;
   

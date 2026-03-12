@@ -1,4 +1,4 @@
-// Prisma schema for Personal-24 Platform (PostgreSQL)
+// Prisma schema for Staffy Platform (PostgreSQL)
 
 generator client {
   provider = "prisma-client-js"

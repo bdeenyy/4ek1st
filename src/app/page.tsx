@@ -628,7 +628,7 @@ export default function Personal24Page() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <Header title="Personal-24" />
+      <Header title="Staffy" />
       <main className="flex-1 p-4 md:p-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-5">
