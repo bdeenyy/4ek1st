@@ -43,6 +43,18 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useSession } from "next-auth/react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 // Status configurations
 const employeeStatusConfig: Record<string, { label: string; color: string }> = {
@@ -249,6 +261,120 @@ function EmployeesTab() {
   );
 }
 
+// Add Bot Dialog Component
+function AddBotDialog({ onBotAdded }: { onBotAdded: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const { data: session } = useSession();
+  const { toast } = useToast();
+  
+  const [formData, setFormData] = useState({
+    name: "",
+    token: "",
+    city: "",
+    description: "",
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user?.id) return;
+    
+    setLoading(true);
+    try {
+      // 1. Создаем бота в базе
+      const res = await fetch("/api/bots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...formData,
+          ownerId: session.user.id,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to create bot");
+      const bot = await res.json();
+
+      // 2. Регистрируем Webhook
+      await fetch(`/api/telegram/webhook?bot_id=${bot.id}`);
+
+      toast({ title: "Бот успешно добавлен", description: "Webhook зарегистрирован" });
+      setOpen(false);
+      setFormData({ name: "", token: "", city: "", description: "" });
+      onBotAdded();
+    } catch (error) {
+      toast({ title: "Ошибка", description: "Не удалось добавить бота", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button><Plus className="mr-2 h-4 w-4" />Добавить бота</Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[425px]">
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Добавить нового бота</DialogTitle>
+            <DialogDescription>
+              Введите данные вашего бота из BotFather для интеграции в систему.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="name">Название (для панели)</Label>
+              <Input
+                id="name"
+                placeholder="Персонал-24: Сочи"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="city">Город</Label>
+              <Input
+                id="city"
+                placeholder="Сочи"
+                value={formData.city}
+                onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="token">HTTP API Token (из BotFather)</Label>
+              <Input
+                id="token"
+                type="password"
+                placeholder="123456789:ABCDE..."
+                value={formData.token}
+                onChange={(e) => setFormData({ ...formData, token: e.target.value })}
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="description">Описание (опционально)</Label>
+              <Textarea
+                id="description"
+                placeholder="Бот для найма в Сочи..."
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="submit" disabled={loading}>
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Сохранить и запустить
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // Bots Tab
 function BotsTab() {
   const [bots, setBots] = useState<any[]>([]);
@@ -267,7 +393,13 @@ function BotsTab() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-medium">Telegram-боты</h3>
-        <Button><Plus className="mr-2 h-4 w-4" />Добавить бота</Button>
+        <AddBotDialog onBotAdded={() => {
+          setLoading(true);
+          fetch("/api/bots")
+            .then((res) => res.json())
+            .then(setBots)
+            .finally(() => setLoading(false));
+        }} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

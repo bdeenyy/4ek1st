@@ -68,3 +68,8 @@ mini-services/*
 
 # Examples (optional - remove if you want to track)
 # examples/
+
+# Agent
+.agent/
+GEMINI.md
+.gemini/

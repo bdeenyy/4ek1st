@@ -3,6 +3,7 @@
 import { useState, useEffect, use } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import io from "socket.io-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,9 +12,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { 
   ArrowLeft, MapPin, Calendar, Clock, Users, Phone, Mail, 
-  CheckCircle, XCircle, UserPlus, UserX, Send, Edit, Trash2
+  CheckCircle, XCircle, UserPlus, UserX, Send, Edit, Trash2,
+  Star, Image as ImageIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -44,6 +47,7 @@ const paymentStatusConfig: Record<string, { label: string; color: string }> = {
 const responseStatusConfig: Record<string, { label: string; color: string }> = {
   PENDING: { label: "Ожидает", color: "bg-yellow-500" },
   ASSIGNED: { label: "Назначен", color: "bg-green-500" },
+  CHECKED_IN: { label: "На месте", color: "bg-purple-500" },
   REJECTED: { label: "Отклонен", color: "bg-red-500" },
   COMPLETED: { label: "Завершил", color: "bg-blue-500" },
 };
@@ -84,6 +88,12 @@ interface Order {
     status: string;
     respondedAt: Date;
     assignedAt: Date | null;
+    checkedInAt: Date | null;
+    completedAt: Date | null;
+    reportText: string | null;
+    reportPhotoId: string | null;
+    rating: number | null;
+    ratedAt: Date | null;
     employee: {
       id: string;
       firstName: string;
@@ -106,6 +116,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [checklists, setChecklists] = useState<string[]>([]);
   const [checkedItems, setCheckedItems] = useState<boolean[]>([]);
   const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
+  const [isRatingDialogOpen, setIsRatingDialogOpen] = useState(false);
+  const [ratingResponseId, setRatingResponseId] = useState<string | null>(null);
+  const [ratingValue, setRatingValue] = useState(5);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
@@ -114,6 +127,32 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   useEffect(() => {
     if (status === "authenticated") fetchOrder();
   }, [status, resolvedParams.id]);
+
+  useEffect(() => {
+    if (!resolvedParams.id || status !== "authenticated") return;
+    
+    const socket = io();
+    
+    socket.on("connect", () => {
+      socket.emit("joinOrder", resolvedParams.id);
+    });
+    
+    socket.on("orderUpdated", (data: { orderId: string }) => {
+      if (data.orderId === resolvedParams.id) {
+        fetchOrder();
+        toast({
+          title: "Заказ обновлен",
+          description: "Получены новые данные (статусы, отклики и т.д.)",
+        });
+      }
+    });
+
+    return () => {
+      socket.emit("leaveOrder", resolvedParams.id);
+      socket.off("orderUpdated");
+      socket.disconnect();
+    };
+  }, [resolvedParams.id, status, toast]);
 
   const fetchOrder = async () => {
     try {
@@ -243,6 +282,38 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         description: "Не удалось отклонить отклик",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleOpenRatingDialog = (responseId: string) => {
+    setRatingResponseId(responseId);
+    setRatingValue(5);
+    setIsRatingDialogOpen(true);
+  };
+
+  const handleRateEmployee = async () => {
+    if (!ratingResponseId) return;
+    try {
+      const response = await fetch(`/api/orders/${resolvedParams.id}/responses/${ratingResponseId}/rate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating: ratingValue }),
+      });
+
+      if (response.ok) {
+        fetchOrder();
+        toast({
+          title: "Оценка выставлена",
+          description: "Рейтинг сотрудника обновлен",
+        });
+      } else {
+        throw new Error("Failed");
+      }
+    } catch (error) {
+      toast({ title: "Ошибка", description: "Не удалось выставить оценку", variant: "destructive" });
+    } finally {
+      setIsRatingDialogOpen(false);
+      setRatingResponseId(null);
     }
   };
 
@@ -424,53 +495,111 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                       {order.responses.map((response) => (
                         <div
                           key={response.id}
-                          className="flex items-center justify-between p-4 border rounded-lg"
+                          className="flex flex-col p-4 border rounded-lg gap-4"
                         >
-                          <div className="flex items-center gap-3">
-                            <Avatar>
-                              <AvatarFallback>
-                                {response.employee.firstName[0]}
-                                {response.employee.lastName[0]}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <p className="font-medium">
-                                {response.employee.firstName} {response.employee.lastName}
-                              </p>
-                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <Phone className="h-3 w-3" />
-                                {response.employee.phone}
-                                {response.employee.rating > 0 && (
-                                  <span>★ {response.employee.rating.toFixed(1)}</span>
-                                )}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <Avatar>
+                                <AvatarFallback>
+                                  {response.employee.firstName[0]}
+                                  {response.employee.lastName[0]}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <p className="font-medium">
+                                  {response.employee.firstName} {response.employee.lastName}
+                                </p>
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <Phone className="h-3 w-3" />
+                                  {response.employee.phone}
+                                  {response.employee.rating > 0 && (
+                                    <span>★ {response.employee.rating.toFixed(1)}</span>
+                                  )}
+                                </div>
                               </div>
                             </div>
+                            <div className="flex items-center gap-2">
+                              <Badge className={responseStatusConfig[response.status]?.color}>
+                                {responseStatusConfig[response.status]?.label}
+                              </Badge>
+                              {response.status === "PENDING" && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="default"
+                                    onClick={() => handleAssignEmployee(response.id)}
+                                    disabled={assignedCount >= order.requiredPeople}
+                                  >
+                                    <UserPlus className="h-4 w-4 mr-1" />
+                                    Назначить
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleRejectEmployee(response.id)}
+                                  >
+                                    <UserX className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Badge className={responseStatusConfig[response.status]?.color}>
-                              {responseStatusConfig[response.status]?.label}
-                            </Badge>
-                            {response.status === "PENDING" && (
-                              <>
-                                <Button
-                                  size="sm"
-                                  variant="default"
-                                  onClick={() => handleAssignEmployee(response.id)}
-                                  disabled={assignedCount >= order.requiredPeople}
-                                >
-                                  <UserPlus className="h-4 w-4 mr-1" />
-                                  Назначить
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleRejectEmployee(response.id)}
-                                >
-                                  <UserX className="h-4 w-4" />
-                                </Button>
-                              </>
-                            )}
-                          </div>
+
+                          {(response.checkedInAt || response.reportText || response.reportPhotoId || response.status === "COMPLETED") && (
+                            <div className="flex flex-col gap-2 pt-2 border-t mt-2">
+                              {response.checkedInAt && (
+                                <div className="text-sm text-muted-foreground flex justify-between">
+                                  <span>Время прибытия (чек-ин):</span>
+                                  <span>{new Date(response.checkedInAt).toLocaleTimeString("ru-RU", {hour: '2-digit', minute:'2-digit'})}</span>
+                                </div>
+                              )}
+                              {response.completedAt && (
+                                <div className="text-sm text-muted-foreground flex justify-between">
+                                  <span>Время завершения:</span>
+                                  <span>{new Date(response.completedAt).toLocaleTimeString("ru-RU", {hour: '2-digit', minute:'2-digit'})}</span>
+                                </div>
+                              )}
+                              {response.reportText && (
+                                <div className="text-sm border-l-2 border-primary pl-3 py-1 my-1">
+                                  <p className="text-muted-foreground italic">&quot;{response.reportText}&quot;</p>
+                                </div>
+                              )}
+                              {response.reportPhotoId && (
+                                <div className="text-sm text-muted-foreground mt-2">
+                                  <div className="flex items-center gap-1 mb-2">
+                                    <ImageIcon className="h-4 w-4" />
+                                    <span>Фотоотчет прикреплен</span>
+                                  </div>
+                                  <div className="flex gap-2 overflow-x-auto pb-2">
+                                    {response.reportPhotoId.split(',').filter(Boolean).map((photoUrl, idx) => (
+                                      <img 
+                                        key={idx} 
+                                        src={photoUrl.startsWith('/') ? photoUrl : `/uploads/telegram_${photoUrl}.jpg`} 
+                                        alt="Отчет" 
+                                        className="h-24 w-24 object-cover rounded-md border" 
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {response.status === "COMPLETED" && (
+                                <div className="flex items-center justify-between mt-2">
+                                  <span className="text-sm font-medium">Оценка работы:</span>
+                                  {response.rating ? (
+                                    <div className="flex text-yellow-500">
+                                      {Array.from({ length: 5 }).map((_, i) => (
+                                        <Star key={i} className={`h-4 w-4 ${i < response.rating! ? "fill-current" : "text-gray-300"}`} />
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <Button size="sm" variant="outline" onClick={() => handleOpenRatingDialog(response.id)}>
+                                      <Star className="h-4 w-4 mr-1" /> Оценить
+                                    </Button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -589,6 +718,39 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Rating Dialog */}
+      <Dialog open={isRatingDialogOpen} onOpenChange={setIsRatingDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Оценить работу сотрудника</DialogTitle>
+            <DialogDescription>
+              Оцените качество выполненной работы (от 1 до 5 звезд)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center gap-2 py-6">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Button 
+                key={i} 
+                variant="ghost" 
+                size="icon" 
+                className="h-12 w-12"
+                onClick={() => setRatingValue(i + 1)}
+              >
+                <Star className={`h-10 w-10 ${i < ratingValue ? "fill-yellow-500 text-yellow-500" : "text-gray-300"}`} />
+              </Button>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRatingDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button onClick={handleRateEmployee}>
+              Подтвердить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

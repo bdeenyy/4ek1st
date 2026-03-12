@@ -5,6 +5,15 @@
 
 import { Telegraf, Context, Markup } from 'telegraf';
 import { PrismaClient } from '@prisma/client';
+import fs from 'fs';
+import path from 'path';
+import { emitOrderUpdate } from '@/lib/socket-helper';
+import { 
+  notifyManagerAboutResponse,
+  notifyManagerCancelledByEmployee,
+  notifyManagerCheckin,
+  notifyManagerCompletion
+} from '@/lib/notifications';
 
 const prisma = new PrismaClient();
 
@@ -30,9 +39,14 @@ async function handleStart(ctx: BotContext) {
   }
   
   try {
-    // Проверяем, существует ли контакт
+    // Проверяем, существует ли контакт для данного бота
     let contact = await prisma.contact.findUnique({
-      where: { telegramId }
+      where: { 
+        telegramId_botId: {
+          telegramId,
+          botId: ctx.botId
+        }
+      }
     });
     
     if (!contact) {
@@ -57,7 +71,12 @@ async function handleStart(ctx: BotContext) {
     } else {
       // Обновляем информацию
       await prisma.contact.update({
-        where: { telegramId },
+        where: { 
+          telegramId_botId: {
+            telegramId,
+            botId: ctx.botId
+          }
+        },
         data: {
           firstName: firstName || null,
           lastName: lastName || null,
@@ -87,16 +106,157 @@ async function handleHelp(ctx: BotContext) {
 /start - Регистрация в системе
 /help - Показать эту справку
 
-💡 *Как это работает:*
-1. Вы получаете уведомления о новых заказах
-2. Нажимаете кнопку "Откликнуться"
-3. Менеджер рассматривает вашу кандидатуру
-4. Получаете уведомление о назначении
-
-📞 *Поддержка:* Свяжитесь с менеджером
+💡 *Управление заказами:*
+Используйте кнопку "📋 Мои заказы", чтобы посмотреть текущие назначения.
+Для отправки отчета по работе - просто пришлите фото или текст в чат, когда вы находитесь на объекте (статус "Я на месте").
   `;
   
   await ctx.reply(helpText, { parse_mode: 'Markdown' });
+}
+
+/**
+ * Обработка "📋 Мои заказы"
+ */
+async function handleMyOrders(ctx: BotContext) {
+  const telegramId = ctx.from?.id.toString();
+  if (!telegramId) return;
+
+  try {
+    // Находим активные назначения работника
+    const activeResponses = await prisma.orderResponse.findMany({
+      where: {
+        employee: { telegramId },
+        status: { in: ['ASSIGNED', 'CHECKED_IN'] },
+        order: { status: { notIn: ['COMPLETED', 'CANCELLED'] } }
+      },
+      include: { order: true }
+    });
+
+    if (activeResponses.length === 0) {
+      return ctx.reply('У вас пока нет активных заказов.');
+    }
+
+    let message = '📋 *Ваши активные заказы:*\n\n';
+    for (const resp of activeResponses) {
+      const order = resp.order;
+      const dateStr = new Date(order.workDate).toLocaleDateString('ru-RU');
+      const statusText = resp.status === 'ASSIGNED' ? '🟡 Ожидает чек-ина' : '🟢 В работе';
+      
+      message += `📍 *${order.title}*\n`;
+      message += `🗓 ${dateStr} в ${order.workTime}\n`;
+      message += `🏠 ул. ${order.street}, д. ${order.houseNumber}\n`;
+      message += `Статус: ${statusText}\n`;
+      
+      // Добавляем инлайн кнопку для чек-ина или завершения
+      if (resp.status === 'ASSIGNED') {
+         message += `\n`;
+         await ctx.reply(message, { 
+           parse_mode: 'Markdown',
+           ...Markup.inlineKeyboard([[Markup.button.callback('📍 Я на месте (Чек-ин)', `checkin_${order.id}`)]])
+         });
+      } else if (resp.status === 'CHECKED_IN') {
+         message += `\n`;
+         await ctx.reply(message, { 
+           parse_mode: 'Markdown',
+           ...Markup.inlineKeyboard([[Markup.button.callback('✅ Завершить работу', `confirm_${order.id}`)]])
+         });
+      }
+      message = ''; // Сбрасываем для следующего, так как мы отправили сообщение с кнопкой
+    }
+    
+    // Если остались сообщения без кнопок (на всякий случай)
+    if (message !== '📋 *Ваши активные заказы:*\n\n' && message !== '') {
+      await ctx.reply(message, { parse_mode: 'Markdown' });
+    }
+
+  } catch (error) {
+    console.error('Error fetching orders:', error);
+    await ctx.reply('Ошибка загрузки заказов.');
+  }
+}
+
+/**
+ * Обработка входящих сообщений (для отчетов)
+ */
+async function handleMessage(ctx: BotContext) {
+  if (!ctx.message) return;
+  const telegramId = ctx.from?.id.toString();
+  if (!telegramId) return;
+
+  // Игнорируем команды
+  if ('text' in ctx.message && ctx.message.text.startsWith('/')) return;
+  
+  // Если это клик по клавиатуре
+  if ('text' in ctx.message) {
+    if (ctx.message.text === '📋 Мои заказы') return handleMyOrders(ctx);
+    if (ctx.message.text === '👤 Профиль') return ctx.reply('Ваш профиль скоро появится :)');
+  }
+
+  // Найти заказ, где работник CHECKED_IN
+  try {
+    const activeResponse = await prisma.orderResponse.findFirst({
+      where: {
+        employee: { telegramId },
+        status: 'CHECKED_IN'
+      },
+      include: { order: true }
+    });
+
+    if (!activeResponse) {
+      // Если работник не на объекте, просто игнорируем или отвечаем стандартно
+      if ('text' in ctx.message && !['📋 Мои заказы', '👤 Профиль'].includes(ctx.message.text)) {
+         return ctx.reply('Команда не распознана. Воспользуйтесь меню.');
+      }
+      return;
+    }
+
+    // Сохранение текста
+    if ('text' in ctx.message && !['📋 Мои заказы', '👤 Профиль'].includes(ctx.message.text)) {
+      const currentText = activeResponse.reportText ? activeResponse.reportText + '\n' : '';
+      await prisma.orderResponse.update({
+        where: { id: activeResponse.id },
+        data: { reportText: currentText + ctx.message.text }
+      });
+      await ctx.reply('📝 Текст добавлен в отчёт.');
+      emitOrderUpdate(activeResponse.order.id);
+    }
+
+    // Сохранение фото
+    if ('photo' in ctx.message && ctx.message.photo.length > 0) {
+      const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id; // Берем большее разрешение
+      
+      try {
+        const fileLink = await ctx.telegram.getFileLink(photoId);
+        const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        
+        const fileName = `telegram_${photoId}.jpg`;
+        const filePath = path.join(uploadsDir, fileName);
+        
+        const response = await fetch(fileLink.toString());
+        const buffer = await response.arrayBuffer();
+        fs.writeFileSync(filePath, Buffer.from(buffer));
+        
+        const publicUrl = `/uploads/${fileName}`;
+        const currentPhotos = activeResponse.reportPhotoId ? activeResponse.reportPhotoId + ',' : '';
+        
+        await prisma.orderResponse.update({
+          where: { id: activeResponse.id },
+          data: { reportPhotoId: currentPhotos + publicUrl }
+        });
+        await ctx.reply('📸 Фото добавлено в отчёт и загружено.');
+        emitOrderUpdate(activeResponse.order.id);
+      } catch (uploadError) {
+        console.error("Error downloading photo:", uploadError);
+        await ctx.reply('❌ Ошибка при сохранении фото.');
+      }
+    }
+
+  } catch (error) {
+    console.error('Error processing message as report:', error);
+  }
 }
 
 /**
@@ -113,24 +273,28 @@ async function handleCallbackQuery(ctx: BotContext) {
   if (!telegramId || !data) return;
   
   try {
-    // Обработка отклика на заказ
     if (data.startsWith('respond_')) {
-      const orderId = data.replace('respond_', '');
-      await handleOrderResponse(ctx, telegramId, orderId);
+      await handleOrderResponse(ctx, telegramId, data.replace('respond_', ''));
     }
-    
-    // Обработка отказа от заказа
-    if (data.startsWith('decline_')) {
-      const orderId = data.replace('decline_', '');
-      await handleOrderDecline(ctx, telegramId, orderId);
+    else if (data.startsWith('decline_')) {
+      await handleOrderDecline(ctx, telegramId, data.replace('decline_', ''));
     }
-    
-    // Подтверждение выполнения
-    if (data.startsWith('confirm_')) {
-      const orderId = data.replace('confirm_', '');
-      await handleWorkConfirm(ctx, telegramId, orderId);
+    else if (data.startsWith('cancel_')) {
+      await handleOrderCancel(ctx, telegramId, data.replace('cancel_', ''));
     }
-    
+    else if (data.startsWith('checkin_')) {
+      await handleCheckin(ctx, telegramId, data.replace('checkin_', ''));
+    }
+    else if (data.startsWith('confirm_')) {
+      await handleWorkConfirm(ctx, telegramId, data.replace('confirm_', ''));
+    }
+    else if (data.startsWith('rate_')) {
+      // rate_{orderId}_{employeeId}_{score}
+      const parts = data.split('_');
+      if (parts.length === 4) {
+        await handleRating(ctx, parts[1], parts[2], parseInt(parts[3]));
+      }
+    }
   } catch (error) {
     console.error('Error in callback query handler:', error);
     await ctx.answerCbQuery('Произошла ошибка. Попробуйте позже.');
@@ -141,36 +305,27 @@ async function handleCallbackQuery(ctx: BotContext) {
  * Обработка отклика на заказ
  */
 async function handleOrderResponse(ctx: BotContext, telegramId: string, orderId: string) {
-  // Находим контакт
+  if (!ctx.botId) return;
+  
   const contact = await prisma.contact.findUnique({
-    where: { telegramId }
+    where: { telegramId_botId: { telegramId, botId: ctx.botId } }
   });
   
   if (!contact) {
-    await ctx.answerCbQuery('Вы не зарегистрированы. Отправьте /start');
-    return;
+    return ctx.answerCbQuery('Вы не зарегистрированы. Отправьте /start');
   }
   
-  // Проверяем, есть ли уже отклик
   const existingResponse = await prisma.orderResponse.findFirst({
-    where: {
-      orderId,
-      employee: { telegramId }
-    }
+    where: { orderId, employee: { telegramId } }
   });
   
   if (existingResponse) {
-    await ctx.answerCbQuery('Вы уже откликнулись на этот заказ');
-    return;
+    return ctx.answerCbQuery('Вы уже откликнулись на этот заказ');
   }
   
-  // Находим или создаем сотрудника по telegramId
-  let employee = await prisma.employee.findFirst({
-    where: { telegramId }
-  });
+  let employee = await prisma.employee.findFirst({ where: { telegramId } });
   
   if (!employee) {
-    // Создаем сотрудника на основе данных контакта
     employee = await prisma.employee.create({
       data: {
         firstName: contact.firstName || 'Неизвестно',
@@ -182,7 +337,6 @@ async function handleOrderResponse(ctx: BotContext, telegramId: string, orderId:
     });
   }
   
-  // Создаем отклик
   await prisma.orderResponse.create({
     data: {
       orderId,
@@ -191,16 +345,17 @@ async function handleOrderResponse(ctx: BotContext, telegramId: string, orderId:
     }
   });
   
+  // Уведомляем менеджера о новом отклике
+  await notifyManagerAboutResponse(orderId, employee.id);
+  emitOrderUpdate(orderId);
+
   await ctx.answerCbQuery('✅ Ваш отклик принят!');
   await ctx.editMessageReplyMarkup(undefined);
-  await ctx.reply(
-    '✅ Вы успешно откликнулись на заказ!\n' +
-    'Ожидайте решения менеджера.'
-  );
+  await ctx.reply('✅ Вы успешно откликнулись на заказ!\nОжидайте решения менеджера.');
 }
 
 /**
- * Обработка отказа от заказа
+ * Обработка отказа от заказа (до отклика)
  */
 async function handleOrderDecline(ctx: BotContext, telegramId: string, orderId: string) {
   await ctx.answerCbQuery('Вы отказались от заказа');
@@ -209,12 +364,192 @@ async function handleOrderDecline(ctx: BotContext, telegramId: string, orderId: 
 }
 
 /**
- * Обработка подтверждения выполнения работы
+ * Отказ от заказа после назначения
+ */
+async function handleOrderCancel(ctx: BotContext, telegramId: string, orderId: string) {
+  const response = await prisma.orderResponse.findFirst({
+    where: { orderId, employee: { telegramId } },
+    include: { order: true, employee: true } // Include order and employee to pass to notification
+  });
+
+  if (!response) return ctx.answerCbQuery('Заказ не найден');
+
+  // Если работник был назначен, обновляем статус
+  if (response.status === 'ASSIGNED') {
+    await prisma.orderResponse.update({
+      where: { id: response.id },
+      data: { status: 'REJECTED' }
+    });
+    
+    // В реальном проекте здесь нужно вызвать notifyManagerCancelledByEmployee
+    console.log(`[Lifecycle] Employee ${telegramId} cancelled assignment for order ${orderId}`);
+    if (response.order && response.employee) {
+      await notifyManagerCancelledByEmployee(response.order.id, response.employee.id);
+    }
+  }
+
+  await ctx.answerCbQuery('Вы отменили участие');
+  await ctx.editMessageReplyMarkup(undefined);
+  await ctx.reply('❌ Вы отменили своё участие в заказе.');
+  emitOrderUpdate(orderId);
+}
+
+/**
+ * Чек-ин на объекте
+ */
+async function handleCheckin(ctx: BotContext, telegramId: string, orderId: string) {
+  const response = await prisma.orderResponse.findFirst({
+    where: { orderId, employee: { telegramId } },
+    include: { order: true, employee: true }
+  });
+
+  if (!response) return ctx.answerCbQuery('Заказ не найден');
+  
+  if (response.status === 'COMPLETED') {
+    return ctx.answerCbQuery('Заказ уже завершён');
+  }
+
+  await prisma.orderResponse.update({
+    where: { id: response.id },
+    data: { 
+      status: 'CHECKED_IN',
+      checkedInAt: new Date()
+    }
+  });
+  
+  // Меняем статус заказа на IN_PROGRESS если это первый чек-ин
+  if (response.order.status === 'PUBLISHED') {
+     await prisma.order.update({
+       where: { id: orderId },
+       data: { status: 'IN_PROGRESS' }
+     });
+  }
+
+  // Обновляем статус сотрудника
+  await prisma.employee.update({
+    where: { id: response.employeeId },
+    data: { status: 'WORKING' }
+  });
+
+  console.log(`[Lifecycle] Employee ${telegramId} checked in at ${orderId}`);
+
+  // Уведомляем менеджера о чек-ине
+  if (response.order && response.employee) {
+    await notifyManagerCheckin(orderId, response.employee.id);
+  }
+  emitOrderUpdate(orderId);
+
+  await ctx.answerCbQuery('Чек-ин успешен!');
+  await ctx.editMessageReplyMarkup(undefined);
+  await ctx.reply(
+    `✅ *Чек-ин выполнен!*\n` +
+    `Теперь вы можете присылать в этот чат фото и текст, они будут прикреплены к отчёту по заказу.\n` +
+    `Когда закончите, нажмите кнопку "Завершить работу" в меню "Мои заказы".`,
+    { parse_mode: 'Markdown' }
+  );
+}
+
+/**
+ * Подтверждение выполнения работы
  */
 async function handleWorkConfirm(ctx: BotContext, telegramId: string, orderId: string) {
+  const response = await prisma.orderResponse.findFirst({
+    where: { orderId, employee: { telegramId } },
+    include: { order: true, employee: true }
+  });
+
+  if (!response) return ctx.answerCbQuery('Заказ не найден');
+
+  // Обновляем статус отклика
+  await prisma.orderResponse.update({
+    where: { id: response.id },
+    data: { 
+      status: 'COMPLETED',
+      completedAt: new Date() 
+    }
+  });
+
+  // Создаем WorkHistory
+  await prisma.workHistory.create({
+    data: {
+      employeeId: response.employeeId,
+      orderId: orderId,
+      orderTitle: response.order.title,
+      workDate: response.order.workDate
+    }
+  });
+
+  // Освобождаем сотрудника
+  await prisma.employee.update({
+    where: { id: response.employeeId },
+    data: { status: 'AVAILABLE' }
+  });
+
+  // Проверяем, завершили ли все остальные назначенные работники
+  const allAssigned = await prisma.orderResponse.findMany({
+    where: { 
+      orderId, 
+      status: { in: ['ASSIGNED', 'CHECKED_IN'] } 
+    }
+  });
+
+  // Если больше никого в работе нет
+  if (allAssigned.length === 0) {
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { status: 'COMPLETED' }
+    });
+    console.log(`[Lifecycle] Order ${orderId} AUTO-COMPLETED.`);
+  }
+
+  // Уведомляем менеджера о завершении работы
+  if (response.order && response.employee) {
+    await notifyManagerCompletion(orderId, response.employee.id);
+  }
+  emitOrderUpdate(orderId);
+
   await ctx.answerCbQuery('Работа подтверждена!');
   await ctx.editMessageReplyMarkup(undefined);
-  await ctx.reply('✅ Спасибо за подтверждение!');
+  await ctx.reply('✅ *Работа успешно завершена!*\nСпасибо за труд! Отчёт передан менеджеру.', { parse_mode: 'Markdown' });
+}
+
+/**
+ * Обработка оценки от менеджера (через бота менеджера)
+ */
+async function handleRating(ctx: BotContext, orderId: string, employeeId: string, score: number) {
+  const response = await prisma.orderResponse.findFirst({
+    where: { orderId, employeeId }
+  });
+
+  if (!response) return ctx.answerCbQuery('Отклик не найден');
+
+  await prisma.orderResponse.update({
+    where: { id: response.id },
+    data: { 
+      rating: score,
+      ratedAt: new Date()
+    }
+  });
+
+  // Пересчет среднего рейтинга сотрудника
+  const allRatings = await prisma.orderResponse.findMany({
+    where: { employeeId, rating: { not: null } },
+    select: { rating: true }
+  });
+  
+  if (allRatings.length > 0) {
+    const total = allRatings.reduce((sum, r) => sum + (r.rating || 0), 0);
+    const avg = total / allRatings.length;
+    
+    await prisma.employee.update({
+      where: { id: employeeId },
+      data: { rating: avg }
+    });
+  }
+
+  await ctx.answerCbQuery(`Оценка ${score} добавлена`);
+  await ctx.editMessageReplyMarkup(undefined);
+  await ctx.reply(`Оценка ⭐${score} успешно сохранена.`);
 }
 
 /**
@@ -223,22 +558,16 @@ async function handleWorkConfirm(ctx: BotContext, telegramId: string, orderId: s
 export function createBot(token: string, botId: string): Telegraf<BotContext> {
   const bot = new Telegraf<BotContext>(token);
   
-  // Сохраняем botId в контексте
   bot.use((ctx, next) => {
     ctx.botId = botId;
     return next();
   });
   
-  // Обработка команды /start
   bot.command('start', handleStart);
-  
-  // Обработка команды /help
   bot.command('help', handleHelp);
-  
-  // Обработка callback queries
+  bot.on('message', handleMessage);
   bot.on('callback_query', handleCallbackQuery);
   
-  // Сохраняем в хранилище
   bots.set(botId, bot);
   
   return bot;
@@ -265,15 +594,10 @@ export async function sendOrderCard(
   }
 ) {
   const bot = Array.from(bots.values()).find(b => b.telegram?.token === botToken);
-  
-  if (!bot) {
-    throw new Error('Bot not found');
-  }
+  if (!bot) throw new Error('Bot not found');
   
   const dateStr = new Date(order.workDate).toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
+    day: 'numeric', month: 'long', year: 'numeric'
   });
   
   const message = `
@@ -299,10 +623,7 @@ ${order.district ? `Район: ${order.district}\n` : ''}ул. ${order.street},
     ]
   ]);
   
-  await bot.telegram.sendMessage(chatId, message, {
-    parse_mode: 'Markdown',
-    ...keyboard
-  });
+  await bot.telegram.sendMessage(chatId, message, { parse_mode: 'Markdown', ...keyboard });
 }
 
 /**
@@ -321,14 +642,10 @@ export async function sendAssignmentNotification(
   }
 ) {
   const bot = Array.from(bots.values()).find(b => b.telegram?.token === botToken);
-  
-  if (!bot) {
-    throw new Error('Bot not found');
-  }
+  if (!bot) throw new Error('Bot not found');
   
   const dateStr = new Date(order.workDate).toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'long'
+    day: 'numeric', month: 'long'
   });
   
   const message = `
@@ -340,26 +657,23 @@ export async function sendAssignmentNotification(
 ⏰ *Время:* ${order.workTime}
 📍 *Адрес:* ул. ${order.street}, д. ${order.houseNumber}
 
-⚠️ Не забудьте подтвердить выполнение после работы!
+⚠️ *За 1 час до смены вам придет напоминание.* 
+Обязательно сделайте 📍 Чек-ин "Я на месте" перед началом работы!
   `;
   
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('✅ Подтвердить выполнение', `confirm_${order.id}`)]
+    // Кнопка отказа до чек-ина
+    [Markup.button.callback('❌ Не смогу выйти (Отмена)', `cancel_${order.id}`)]
   ]);
   
-  await bot.telegram.sendMessage(telegramId, message, {
-    parse_mode: 'Markdown',
-    ...keyboard
-  });
+  await bot.telegram.sendMessage(telegramId, message, { parse_mode: 'Markdown', ...keyboard });
 }
 
 /**
- * Инициализация всех активных ботов из базы данных
+ * Инициализация всех активных ботов из БД
  */
 export async function initializeBots() {
-  const activeBots = await prisma.bot.findMany({
-    where: { isActive: true }
-  });
+  const activeBots = await prisma.bot.findMany({ where: { isActive: true } });
   
   for (const botData of activeBots) {
     try {
@@ -373,16 +687,10 @@ export async function initializeBots() {
   return activeBots.length;
 }
 
-/**
- * Получение экземпляра бота по ID
- */
 export function getBot(botId: string): Telegraf<BotContext> | undefined {
   return bots.get(botId);
 }
 
-/**
- * Получение всех активных ботов
- */
 export function getAllBots(): Map<string, Telegraf<BotContext>> {
   return bots;
 }

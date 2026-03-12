@@ -32,7 +32,7 @@ export async function GET(
     }
 
     // Get related orders if orderIds exists
-    let orders = [];
+    let orders: { id: string; title: string; workDate: Date; pricePerPerson: number }[] = [];
     if (payment.orderIds) {
       const orderIds = JSON.parse(payment.orderIds) as string[];
       orders = await db.order.findMany({

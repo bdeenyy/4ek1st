@@ -8,9 +8,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { processScheduledPublications } from '@/bot/broadcast';
 import { processShiftReminders } from '@/lib/notifications';
 import { dequeue, QUEUES } from '@/lib/queue';
+import { PrismaClient } from '@prisma/client';
 
 // Секретный ключ для защиты endpoint
 const CRON_SECRET = process.env.CRON_SECRET || 'cron-secret-key';
+const prisma = new PrismaClient();
 
 /**
  * Обработка cron запросов
@@ -44,6 +46,11 @@ export async function GET(request: NextRequest) {
     // Обработка очереди сообщений
     if (type === 'all' || type === 'queue') {
       results.queue = await processQueue();
+    }
+    
+    // Авто-закрытие заказов
+    if (type === 'all' || type === 'autocomplete') {
+      results.autocomplete = await processAutocomplete();
     }
     
     return NextResponse.json({
@@ -177,3 +184,45 @@ async function cleanupOldData(): Promise<void> {
     }
   });
 }
+
+/**
+ * Авто-закрытие заказов, где все работники CHECKED_IN
+ * и прошло достаточно времени (например, 12 часов с начала смены)
+ */
+async function processAutocomplete(): Promise<{ processed: number; errors: string[] }> {
+  let processed = 0;
+  try {
+    const twelveHoursAgo = new Date();
+    twelveHoursAgo.setHours(twelveHoursAgo.getHours() - 12);
+    
+    const ordersInProgress = await prisma.order.findMany({
+      where: {
+        status: 'IN_PROGRESS',
+        workDate: { lt: twelveHoursAgo }
+      },
+      include: {
+        responses: {
+          where: { status: { in: ['ASSIGNED', 'CHECKED_IN'] } }
+        }
+      }
+    });
+    
+    for (const order of ordersInProgress) {
+      if (order.responses.length > 0 && order.responses.every(r => r.status === 'CHECKED_IN')) {
+         // Автозавершаем
+         await prisma.order.update({
+           where: { id: order.id },
+           data: { status: 'COMPLETED' }
+         });
+         await prisma.orderResponse.updateMany({
+           where: { orderId: order.id, status: 'CHECKED_IN' },
+           data: { status: 'COMPLETED', completedAt: new Date(), reportText: 'Авто-завершено системой' }
+         });
+         processed++;
+      }
+    }
+    return { processed, errors: [] };
+  } catch (error) {
+    return { processed: 0, errors: [String(error)] };
+  }
+}

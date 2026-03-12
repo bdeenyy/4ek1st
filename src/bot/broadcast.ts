@@ -251,11 +251,18 @@ export async function sendShiftReminder(
 ⏰ *Время:* ${order.workTime}
 📍 *Адрес:* ул. ${order.street}, д. ${order.houseNumber}
 
-До начала смены остался 1 час!
+До начала смены остался 1 час! 
+Пожалуйста, не забудьте нажать кнопку ниже, когда прибудете на место.
     `;
     
+    const { Markup } = require('telegraf');
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('📍 Я на месте (Чек-ин)', `checkin_${order.id}`)]
+    ]);
+    
     await bot.telegram.sendMessage(employee.telegramId, message, {
-      parse_mode: 'Markdown'
+      parse_mode: 'Markdown',
+      ...keyboard
     });
     
     return { success: true };

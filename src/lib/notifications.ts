@@ -3,7 +3,7 @@
  * Обработка напоминаний и уведомлений для менеджеров и сотрудников
  */
 
-import { PrismaClient, OrderStatus, ResponseStatus } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { sendShiftReminder } from '@/bot/broadcast';
 import { getBot, createBot } from '@/bot/index';
 import { scheduleTask, QUEUES } from './queue';
@@ -40,19 +40,79 @@ export async function notifyManagerAboutResponse(
     // Получаем менеджера (создателя заказа)
     const manager = order.creator;
     
-    // Если у менеджера есть telegramId, отправляем уведомление
-    // Примечание: для этого нужно добавить telegramId в модель User или создать связь
-    // Пока отправляем в лог
     console.log(`[Notification] New response for order ${order.title} from ${employee.firstName} ${employee.lastName}`);
-    
-    // Можно также отправить через бот-уведомления
-    // Для этого нужен специальный канал или чат с менеджером
     
     return { success: true };
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return { success: false, error: errorMessage };
+  }
+}
+
+/**
+ * Отправка уведомления менеджеру о чек-ине
+ */
+export async function notifyManagerCheckin(
+  orderId: string,
+  employeeId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { creator: true }
+    });
+    const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
+    if (!order || !employee) return { success: false, error: 'Not found' };
+    
+    console.log(`[Notification] Employee ${employee.firstName} ${employee.lastName} CHECKED IN for order ${order.title}`);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * Отправка уведомления менеджеру о завершении работы
+ */
+export async function notifyManagerCompletion(
+  orderId: string,
+  employeeId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { creator: true }
+    });
+    const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
+    if (!order || !employee) return { success: false, error: 'Not found' };
+    
+    console.log(`[Notification] Employee ${employee.firstName} ${employee.lastName} COMPLETED work for order ${order.title}`);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * Отправка уведомления менеджеру об отказе после назначения
+ */
+export async function notifyManagerCancelledByEmployee(
+  orderId: string,
+  employeeId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { creator: true }
+    });
+    const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
+    if (!order || !employee) return { success: false, error: 'Not found' };
+    
+    console.log(`[Notification] ⚠️ Employee ${employee.firstName} ${employee.lastName} CANCELLED assignment for order ${order.title}`);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
   }
 }
 
@@ -187,7 +247,7 @@ export async function processShiftReminders(): Promise<{
     // Находим заказы, которые начнутся через час
     const orders = await prisma.order.findMany({
       where: {
-        status: OrderStatus.IN_PROGRESS,
+        status: 'IN_PROGRESS',
         workDate: {
           gte: now,
           lte: reminderTime
@@ -196,7 +256,7 @@ export async function processShiftReminders(): Promise<{
       include: {
         responses: {
           where: {
-            status: ResponseStatus.ASSIGNED
+            status: 'ASSIGNED'
           },
           include: {
             employee: true
@@ -261,7 +321,7 @@ export async function notifyOrderCancelled(
         bot: true,
         responses: {
           where: {
-            status: ResponseStatus.ASSIGNED
+            status: 'ASSIGNED'
           },
           include: {
             employee: true
@@ -333,7 +393,7 @@ export async function requestOrderRating(
         bot: true,
         responses: {
           where: {
-            status: ResponseStatus.COMPLETED
+            status: 'COMPLETED'
           },
           include: {
             employee: true
@@ -396,6 +456,9 @@ export async function requestOrderRating(
 
 export default {
   notifyManagerAboutResponse,
+  notifyManagerCheckin,
+  notifyManagerCompletion,
+  notifyManagerCancelledByEmployee,
   notifyEmployeeAssigned,
   notifyEmployeeRejected,
   processShiftReminders,

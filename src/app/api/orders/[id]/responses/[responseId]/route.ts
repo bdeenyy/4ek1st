@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { emitOrderUpdate } from "@/lib/socket-helper";
 
 export async function PATCH(
   request: NextRequest,
@@ -59,6 +60,8 @@ export async function PATCH(
       }
     }
 
+    emitOrderUpdate(id);
+
     return NextResponse.json(response);
   } catch (error) {
     console.error("Error updating response:", error);
@@ -82,6 +85,8 @@ export async function DELETE(
         orderId: id 
       },
     });
+
+    emitOrderUpdate(id);
 
     return NextResponse.json({ success: true });
   } catch (error) {

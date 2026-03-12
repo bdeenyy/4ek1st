@@ -5,7 +5,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -186,19 +186,29 @@ model OrderResponse {
   status      ResponseStatus @default(PENDING)
   respondedAt DateTime @default(now())
   assignedAt  DateTime?
+  
+  // Lifecycle tracking
+  checkedInAt  DateTime?      // Время чек-ина (работник на месте)
+  completedAt  DateTime?      // Время подтверждения выполнения
+  reportText   String?        // Текстовый отчёт работника
+  reportPhotoId String?       // Telegram file_id фото-отчёта
+  rating       Int?           // Оценка менеджера (1-5)
+  ratedAt      DateTime?      // Время оценки
 }
 
 enum ResponseStatus {
   PENDING     // Ожидает
   ASSIGNED    // Назначен
+  CHECKED_IN  // Пришёл на объект
   REJECTED    // Отклонен
   COMPLETED   // Завершил
 }
 
 // Контакты (пользователи ботов)
+// Составной ключ: один человек может работать в нескольких городах (ботах)
 model Contact {
   id           String   @id @default(cuid())
-  telegramId   String   @unique
+  telegramId   String
   firstName    String?
   lastName     String?
   username     String?
@@ -209,6 +219,8 @@ model Contact {
   registeredAt DateTime @default(now())
   approvedAt   DateTime?
   notes        String?
+
+  @@unique([telegramId, botId])
 }
 
 enum ContactStatus {
