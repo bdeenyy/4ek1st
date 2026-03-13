@@ -59,11 +59,13 @@ export async function publishOrder(orderId: string): Promise<{
     const contacts = await db.contact.findMany({
       where: {
         botId: order.botId,
-        status: 'APPROVED'
       }
     });
     
-    if (contacts.length === 0) {
+    const approvedContacts = contacts.filter(c => c.status === 'APPROVED');
+    console.log(`[Broadcast] Found ${contacts.length} total contacts, ${approvedContacts.length} approved.`);
+    
+    if (approvedContacts.length === 0) {
       return { success: true, sentCount: 0, errors: ['No approved contacts to send to'] };
     }
     
@@ -71,8 +73,8 @@ export async function publishOrder(orderId: string): Promise<{
     const message = formatOrderMessage(order);
     const keyboard = createOrderKeyboard(order.id);
     
-    // Отправляем сообщение каждому контакту
-    for (const contact of contacts) {
+    // Отправляем сообщение каждому одобренному контакту
+    for (const contact of approvedContacts) {
       try {
         await bot.telegram.sendMessage(contact.telegramId, message, {
           parse_mode: 'Markdown',

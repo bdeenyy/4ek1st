@@ -53,18 +53,17 @@ export async function PATCH(request: Request) {
     });
 
     // Обновляем счётчик подписчиков бота
-    // Пересчитываем количество одобренных контактов
+    // Пересчитываем общее количество контактов для бота
     if (currentContact.status !== status) {
-      const approvedCount = await db.contact.count({
+      const totalCount = await db.contact.count({
         where: {
           botId: contact.botId,
-          status: "APPROVED"
         }
       });
 
       await db.bot.update({
         where: { id: contact.botId },
-        data: { subscriberCount: approvedCount }
+        data: { subscriberCount: totalCount }
       });
     }
 

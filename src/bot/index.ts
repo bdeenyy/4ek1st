@@ -60,6 +60,16 @@ async function handleStart(ctx: BotContext) {
         }
       });
       
+      // Обновляем счётчик подписчиков (общее кол-во контактов для этого бота)
+      const totalCount = await db.contact.count({
+        where: { botId: ctx.botId }
+      });
+
+      await db.bot.update({
+        where: { id: ctx.botId },
+        data: { subscriberCount: totalCount }
+      });
+
       await ctx.reply(
         `👋 Добро пожаловать, ${firstName || 'друг'}!\n\n` +
         `Вы успешно зарегистрированы в системе.\n` +
