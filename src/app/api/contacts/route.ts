@@ -33,6 +33,16 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     const { id, status, notes } = body;
 
+    // Получаем текущий контакт для определения изменений
+    const currentContact = await db.contact.findUnique({
+      where: { id },
+      select: { status: true, botId: true }
+    });
+
+    if (!currentContact) {
+      return NextResponse.json({ error: "Contact not found" }, { status: 404 });
+    }
+
     const contact = await db.contact.update({
       where: { id },
       data: {
@@ -41,6 +51,22 @@ export async function PATCH(request: Request) {
         approvedAt: status === "APPROVED" ? new Date() : undefined,
       },
     });
+
+    // Обновляем счётчик подписчиков бота
+    // Пересчитываем количество одобренных контактов
+    if (currentContact.status !== status) {
+      const approvedCount = await db.contact.count({
+        where: {
+          botId: contact.botId,
+          status: "APPROVED"
+        }
+      });
+
+      await db.bot.update({
+        where: { id: contact.botId },
+        data: { subscriberCount: approvedCount }
+      });
+    }
 
     return NextResponse.json(contact);
   } catch (error) {

@@ -3,10 +3,10 @@
  * Публикация заказов в Telegram каналы и чаты
  */
 
-import { PrismaClient } from '@prisma/client';
+import { db } from '@/lib/db';
 import { getBot, createBot } from './index';
 
-const prisma = new PrismaClient();
+
 
 interface OrderData {
   id: string;
@@ -36,7 +36,7 @@ export async function publishOrder(orderId: string): Promise<{
   
   try {
     // Получаем заказ с информацией о боте
-    const order = await prisma.order.findUnique({
+    const order = await db.order.findUnique({
       where: { id: orderId },
       include: { bot: true }
     });
@@ -56,7 +56,7 @@ export async function publishOrder(orderId: string): Promise<{
     }
     
     // Получаем все одобренные контакты для рассылки
-    const contacts = await prisma.contact.findMany({
+    const contacts = await db.contact.findMany({
       where: {
         botId: order.botId,
         status: 'APPROVED'
@@ -85,7 +85,7 @@ export async function publishOrder(orderId: string): Promise<{
         
         // Если пользователь заблокировал бота, помечаем контакт
         if (errorMessage.includes('blocked') || errorMessage.includes('deactivated')) {
-          await prisma.contact.update({
+          await db.contact.update({
             where: { id: contact.id },
             data: { status: 'BANNED' }
           });
@@ -94,7 +94,7 @@ export async function publishOrder(orderId: string): Promise<{
     }
     
     // Обновляем статус заказа на PUBLISHED
-    await prisma.order.update({
+    await db.order.update({
       where: { id: orderId },
       data: { status: 'PUBLISHED' }
     });
@@ -115,7 +115,7 @@ export async function publishOrderToChannel(
   channelId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const order = await prisma.order.findUnique({
+    const order = await db.order.findUnique({
       where: { id: orderId },
       include: { bot: true }
     });
@@ -154,7 +154,7 @@ export async function scheduleOrderPublication(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     // Обновляем заказ с отложенной публикацией
-    await prisma.order.update({
+    await db.order.update({
       where: { id: orderId },
       data: {
         publishType: 'SCHEDULED',
@@ -182,7 +182,7 @@ export async function processScheduledPublications(): Promise<{
   
   try {
     // Находим заказы, которые нужно опубликовать
-    const orders = await prisma.order.findMany({
+    const orders = await db.order.findMany({
       where: {
         publishType: 'SCHEDULED',
         publishAt: { lte: new Date() },
@@ -215,12 +215,12 @@ export async function sendShiftReminder(
   employeeId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const order = await prisma.order.findUnique({
+    const order = await db.order.findUnique({
       where: { id: orderId },
       include: { bot: true }
     });
     
-    const employee = await prisma.employee.findUnique({
+    const employee = await db.employee.findUnique({
       where: { id: employeeId }
     });
     
