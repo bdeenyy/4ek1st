@@ -127,6 +127,23 @@ function DashboardTab() {
   ];
 
   return (
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {stats.map((stat, i) => (
+          <Card key={i}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
+              <div className={cn("p-2 rounded-lg", stat.bg)}>
+                <stat.icon className={cn("h-4 w-4", stat.color)} />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stat.value}</div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -234,6 +251,7 @@ function DashboardTab() {
           </CardContent>
         </Card>
       </div>
+    </div>
   );
 }
 
