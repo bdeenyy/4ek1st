@@ -4,9 +4,7 @@ meta:
     name: docker
 
 build:
-  # Using the multi-stage Dockerfile provided
   dockerfile: Dockerfile
 
 run:
-  # Next.js standalone server runs on port 3000
   containerPort: 3000
