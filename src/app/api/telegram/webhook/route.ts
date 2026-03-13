@@ -63,11 +63,12 @@ export async function POST(request: NextRequest) {
 
 /**
  * GET /api/telegram/webhook
- * Регистрация webhook для бота
+ * Регистрация webhook для бота или получение информации
  */
 export async function GET(request: NextRequest) {
   try {
     const botId = request.nextUrl.searchParams.get('bot_id');
+    const action = request.nextUrl.searchParams.get('action'); // 'info' для получения информации
     
     if (!botId) {
       return NextResponse.json(
@@ -88,25 +89,83 @@ export async function GET(request: NextRequest) {
       );
     }
     
+    // Создаем экземпляр бота
+    const bot = getBot(botId) || createBot(botData.token, botId);
+    
+    // Если action=info - только получаем информацию без обновления webhook
+    if (action === 'info') {
+      try {
+        const [botInfo, webhookInfo] = await Promise.all([
+          bot.telegram.getMe(),
+          bot.telegram.getWebhookInfo()
+        ]);
+        
+        return NextResponse.json({
+          ok: true,
+          bot: {
+            id: botInfo.id,
+            username: botInfo.username,
+            firstName: botInfo.first_name,
+            canJoinGroups: botInfo.can_join_groups,
+            canReadAllGroupMessages: botInfo.can_read_all_group_messages,
+            supportsInlineQueries: botInfo.supports_inline_queries,
+          },
+          webhook: {
+            url: webhookInfo.url,
+            hasCustomCertificate: webhookInfo.has_custom_certificate,
+            pendingUpdateCount: webhookInfo.pending_update_count,
+            lastErrorDate: webhookInfo.last_error_date,
+            lastErrorMessage: webhookInfo.last_error_message,
+            maxConnections: webhookInfo.max_connections,
+            ipAddress: webhookInfo.ip_address,
+          }
+        });
+      } catch (error: any) {
+        return NextResponse.json({
+          ok: false,
+          error: 'Не удалось получить информацию о боте. Проверьте токен.',
+          details: error.message
+        }, { status: 400 });
+      }
+    }
+    
     // Формируем URL для webhook
     const host = request.headers.get('host') || 'localhost:3000';
     const protocol = request.headers.get('x-forwarded-proto') || 'https';
     const webhookUrl = `${protocol}://${host}/api/telegram/webhook?bot_id=${botId}`;
     
-    // Создаем временный экземпляр бота для регистрации webhook
-    const bot = createBot(botData.token, botId);
-    
-    // Регистрируем webhook
-    await bot.telegram.setWebhook(webhookUrl);
-    
-    // Получаем информацию о webhook
-    const webhookInfo = await bot.telegram.getWebhookInfo();
-    
-    return NextResponse.json({
-      ok: true,
-      webhookUrl,
-      webhookInfo
-    });
+    try {
+      // Получаем информацию о боте
+      const botInfo = await bot.telegram.getMe();
+      
+      // Регистрируем webhook
+      await bot.telegram.setWebhook(webhookUrl);
+      
+      // Получаем информацию о webhook
+      const webhookInfo = await bot.telegram.getWebhookInfo();
+      
+      return NextResponse.json({
+        ok: true,
+        webhookUrl,
+        bot: {
+          id: botInfo.id,
+          username: botInfo.username,
+          firstName: botInfo.first_name,
+        },
+        webhookInfo: {
+          url: webhookInfo.url,
+          pendingUpdateCount: webhookInfo.pending_update_count,
+          lastErrorMessage: webhookInfo.last_error_message || null,
+        }
+      });
+    } catch (error: any) {
+      console.error('Webhook registration error:', error);
+      return NextResponse.json({
+        ok: false,
+        error: 'Не удалось зарегистрировать webhook',
+        details: error.message
+      }, { status: 400 });
+    }
     
   } catch (error) {
     console.error('Webhook registration error:', error);

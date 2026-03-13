@@ -33,6 +33,25 @@ export async function DELETE(
   try {
     const { id } = await params;
     
+    // Проверяем есть ли связанные заказы
+    const ordersCount = await db.order.count({
+      where: { botId: id },
+    });
+    
+    const contactsCount = await db.contact.count({
+      where: { botId: id },
+    });
+    
+    if (ordersCount > 0 || contactsCount > 0) {
+      return NextResponse.json(
+        { 
+          error: "Невозможно удалить бота", 
+          details: `У бота есть связанные записи: ${ordersCount} заказов, ${contactsCount} контактов. Сначала удалите их или переназначьте на другого бота.` 
+        },
+        { status: 400 }
+      );
+    }
+    
     // Попытка удалить вебхук из Telegram перед удалением из БД
     try {
       const activeBot = getBot(id);

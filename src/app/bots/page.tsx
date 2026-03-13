@@ -29,7 +29,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreVertical, RefreshCw, PowerOff, Trash2, Power } from "lucide-react";
+import { MoreVertical, RefreshCw, PowerOff, Trash2, Power, Info } from "lucide-react";
 
 // Add Bot Dialog Component
 function AddBotDialog({ onBotAdded }: { onBotAdded: () => void }) {
@@ -163,11 +163,20 @@ export default function BotsPage() {
     try {
       setLoading(true);
       const res = await fetch(`/api/bots/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete bot");
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.details || data.error || "Failed to delete bot");
+      }
+      
       toast({ title: "Бот удален" });
       setBots(bots.filter(b => b.id !== id));
-    } catch (error) {
-      toast({ title: "Ошибка", description: "Не удалось удалить бота", variant: "destructive" });
+    } catch (error: any) {
+      toast({ 
+        title: "Ошибка", 
+        description: error.message || "Не удалось удалить бота", 
+        variant: "destructive" 
+      });
     } finally {
       setLoading(false);
     }
@@ -195,10 +204,66 @@ export default function BotsPage() {
     try {
       setLoading(true);
       const res = await fetch(`/api/telegram/webhook?bot_id=${id}`);
-      if (!res.ok) throw new Error("Failed to refresh webhook");
-      toast({ title: "Webhook обновлен", description: "Бот снова готов к работе" });
-    } catch (error) {
-      toast({ title: "Ошибка", description: "Не удалось обновить webhook", variant: "destructive" });
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.details || data.error || "Failed to refresh webhook");
+      }
+      
+      toast({ 
+        title: "Webhook обновлен", 
+        description: data.bot?.username 
+          ? `Бот @${data.bot.username} готов к работе` 
+          : "Бот снова готов к работе" 
+      });
+    } catch (error: any) {
+      toast({ 
+        title: "Ошибка", 
+        description: error.message || "Не удалось обновить webhook", 
+        variant: "destructive" 
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCheckBotStatus = async (id: string) => {
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/telegram/webhook?bot_id=${id}&action=info`);
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.details || data.error || "Failed to check bot status");
+      }
+      
+      if (data.ok) {
+        const botInfo = data.bot;
+        const webhookInfo = data.webhook;
+        
+        let message = `Бот: @${botInfo.username} (${botInfo.firstName})\n`;
+        message += `Webhook: ${webhookInfo.url ? '✅ Настроен' : '❌ Не настроен'}\n`;
+        
+        if (webhookInfo.lastErrorMessage) {
+          message += `Последняя ошибка: ${webhookInfo.lastErrorMessage}\n`;
+        }
+        
+        if (webhookInfo.pendingUpdateCount > 0) {
+          message += `Ожидающих обновлений: ${webhookInfo.pendingUpdateCount}\n`;
+        }
+        
+        toast({ 
+          title: "Статус бота", 
+          description: message,
+          duration: 5000
+        });
+      }
+    } catch (error: any) {
+      toast({ 
+        title: "Ошибка", 
+        description: error.message || "Не удалось проверить статус бота", 
+        variant: "destructive" 
+      });
     } finally {
       setLoading(false);
     }
@@ -253,6 +318,10 @@ export default function BotsPage() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Управление ботом</DropdownMenuLabel>
                           <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => handleCheckBotStatus(bot.id)}>
+                            <Info className="mr-2 h-4 w-4" />
+                            Проверить статус
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleRefreshWebhook(bot.id)}>
                             <RefreshCw className="mr-2 h-4 w-4" />
                             Обновить Webhook

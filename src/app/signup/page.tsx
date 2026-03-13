@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,12 +38,27 @@ export default function SignupPage() {
         throw new Error(data.error || "Ошибка при регистрации");
       }
 
-      toast({
-        title: "Успех!",
-        description: "Аккаун создан. Теперь вы можете войти.",
+      // Автоматически авторизуем пользователя после регистрации
+      const signInResult = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
       });
-      
-      router.push("/login");
+
+      if (signInResult?.ok) {
+        toast({
+          title: "Добро пожаловать!",
+          description: "Аккаунт создан и вы автоматически авторизованы.",
+        });
+        router.push("/");
+      } else {
+        // Если авто-авторизация не удалась, перенаправляем на логин
+        toast({
+          title: "Успех!",
+          description: "Аккаунт создан. Войдите с вашими данными.",
+        });
+        router.push("/login");
+      }
     } catch (error: any) {
       toast({
         title: "Ошибка",
