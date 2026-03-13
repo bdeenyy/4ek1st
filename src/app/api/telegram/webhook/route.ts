@@ -5,9 +5,17 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createBot, getBot } from '@/bot';
-import { PrismaClient } from '@prisma/client';
+import { db } from '@/lib/db';
+import crypto from 'crypto';
 
-const prisma = new PrismaClient();
+/**
+ * Генерация секретного токена для webhook
+ * Используем хэш от bot_id + NEXTAUTH_SECRET для уникальности
+ */
+function generateSecretToken(botId: string): string {
+  const secret = process.env.NEXTAUTH_SECRET || 'default-secret';
+  return crypto.createHash('sha256').update(`${botId}:${secret}`).digest('hex').substring(0, 32);
+}
 
 /**
  * POST /api/telegram/webhook
@@ -15,29 +23,42 @@ const prisma = new PrismaClient();
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    
-    // Получаем bot_id из query параметров или заголовка
-    const botId = request.nextUrl.searchParams.get('bot_id') || 
-                  request.headers.get('x-telegram-bot-id');
+    // Получаем bot_id из query параметров
+    const botId = request.nextUrl.searchParams.get('bot_id');
     
     if (!botId) {
+      console.warn('[Webhook] Request without bot_id');
       return NextResponse.json(
         { error: 'Bot ID is required' },
         { status: 400 }
       );
     }
     
+    // Проверяем secret_token для защиты от подделки запросов
+    const secretToken = request.headers.get('x-telegram-bot-api-secret-token');
+    const expectedToken = generateSecretToken(botId);
+    
+    if (secretToken !== expectedToken) {
+      console.warn(`[Webhook] Invalid secret token for bot ${botId}`);
+      return NextResponse.json(
+        { error: 'Invalid secret token' },
+        { status: 403 }
+      );
+    }
+    
+    const body = await request.json();
+    
     // Получаем бота из хранилища или создаем новый экземпляр
     let bot = getBot(botId);
     
     if (!bot) {
       // Получаем токен бота из базы данных
-      const botData = await prisma.bot.findUnique({
+      const botData = await db.bot.findUnique({
         where: { id: botId }
       });
       
       if (!botData) {
+        console.warn(`[Webhook] Bot not found: ${botId}`);
         return NextResponse.json(
           { error: 'Bot not found' },
           { status: 404 }
@@ -53,7 +74,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
     
   } catch (error) {
-    console.error('Webhook error:', error);
+    console.error('[Webhook] Error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -78,7 +99,7 @@ export async function GET(request: NextRequest) {
     }
     
     // Получаем данные бота
-    const botData = await prisma.bot.findUnique({
+    const botData = await db.bot.findUnique({
       where: { id: botId }
     });
     
@@ -134,19 +155,29 @@ export async function GET(request: NextRequest) {
     const protocol = request.headers.get('x-forwarded-proto') || 'https';
     const webhookUrl = `${protocol}://${host}/api/telegram/webhook?bot_id=${botId}`;
     
+    // Генерируем secret_token для этого бота
+    const secretToken = generateSecretToken(botId);
+    
     try {
       // Получаем информацию о боте
       const botInfo = await bot.telegram.getMe();
       
-      // Регистрируем webhook
-      await bot.telegram.setWebhook(webhookUrl);
+      // Регистрируем webhook с secret_token
+      await bot.telegram.setWebhook(webhookUrl, {
+        secret_token: secretToken,
+        allowed_updates: ['message', 'callback_query', 'inline_query'],
+        drop_pending_updates: false // Сохраняем ожидающие обновления
+      });
       
       // Получаем информацию о webhook
       const webhookInfo = await bot.telegram.getWebhookInfo();
       
+      console.log(`[Webhook] Registered for bot ${botId}: ${webhookUrl}`);
+      
       return NextResponse.json({
         ok: true,
         webhookUrl,
+        secretTokenConfigured: true,
         bot: {
           id: botInfo.id,
           username: botInfo.username,
@@ -159,7 +190,7 @@ export async function GET(request: NextRequest) {
         }
       });
     } catch (error: any) {
-      console.error('Webhook registration error:', error);
+      console.error('[Webhook] Registration error:', error);
       return NextResponse.json({
         ok: false,
         error: 'Не удалось зарегистрировать webhook',
@@ -168,7 +199,7 @@ export async function GET(request: NextRequest) {
     }
     
   } catch (error) {
-    console.error('Webhook registration error:', error);
+    console.error('[Webhook] Registration error:', error);
     return NextResponse.json(
       { error: 'Failed to register webhook' },
       { status: 500 }
@@ -192,7 +223,7 @@ export async function DELETE(request: NextRequest) {
     }
     
     // Получаем данные бота
-    const botData = await prisma.bot.findUnique({
+    const botData = await db.bot.findUnique({
       where: { id: botId }
     });
     
@@ -209,13 +240,15 @@ export async function DELETE(request: NextRequest) {
     // Удаляем webhook
     await bot.telegram.deleteWebhook();
     
+    console.log(`[Webhook] Deleted for bot ${botId}`);
+    
     return NextResponse.json({
       ok: true,
       message: 'Webhook deleted successfully'
     });
     
   } catch (error) {
-    console.error('Webhook deletion error:', error);
+    console.error('[Webhook] Deletion error:', error);
     return NextResponse.json(
       { error: 'Failed to delete webhook' },
       { status: 500 }

@@ -27,6 +27,8 @@ export default withAuth(
           pathname.startsWith("/login") ||
           pathname.startsWith("/signup") ||
           pathname.startsWith("/api/auth") ||
+          pathname.startsWith("/api/telegram/webhook") || // Разрешаем Telegram webhook без авторизации
+          pathname.startsWith("/api/health") || // Health check для мониторинга
           pathname.startsWith("/_next") ||
           pathname === "/favicon.ico"
         ) {

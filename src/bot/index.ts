@@ -4,9 +4,9 @@
  */
 
 import { Telegraf, Context, Markup } from 'telegraf';
-import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
+import { db } from '@/lib/db';
 import { emitOrderUpdate } from '@/lib/socket-helper';
 import { 
   notifyManagerAboutResponse,
@@ -14,8 +14,6 @@ import {
   notifyManagerCheckin,
   notifyManagerCompletion
 } from '@/lib/notifications';
-
-const prisma = new PrismaClient();
 
 // Типы для бота
 interface BotContext extends Context {
@@ -40,7 +38,7 @@ async function handleStart(ctx: BotContext) {
   
   try {
     // Проверяем, существует ли контакт для данного бота
-    let contact = await prisma.contact.findUnique({
+    let contact = await db.contact.findUnique({
       where: { 
         telegramId_botId: {
           telegramId,
@@ -51,7 +49,7 @@ async function handleStart(ctx: BotContext) {
     
     if (!contact) {
       // Создаем новый контакт
-      contact = await prisma.contact.create({
+      contact = await db.contact.create({
         data: {
           telegramId,
           firstName: firstName || null,
@@ -70,7 +68,7 @@ async function handleStart(ctx: BotContext) {
       );
     } else {
       // Обновляем информацию
-      await prisma.contact.update({
+      await db.contact.update({
         where: { 
           telegramId_botId: {
             telegramId,
@@ -123,7 +121,7 @@ async function handleMyOrders(ctx: BotContext) {
 
   try {
     // Находим активные назначения работника
-    const activeResponses = await prisma.orderResponse.findMany({
+    const activeResponses = await db.orderResponse.findMany({
       where: {
         employee: { telegramId },
         status: { in: ['ASSIGNED', 'CHECKED_IN'] },
@@ -194,7 +192,7 @@ async function handleMessage(ctx: BotContext) {
 
   // Найти заказ, где работник CHECKED_IN
   try {
-    const activeResponse = await prisma.orderResponse.findFirst({
+    const activeResponse = await db.orderResponse.findFirst({
       where: {
         employee: { telegramId },
         status: 'CHECKED_IN'
@@ -213,7 +211,7 @@ async function handleMessage(ctx: BotContext) {
     // Сохранение текста
     if ('text' in ctx.message && !['📋 Мои заказы', '👤 Профиль'].includes(ctx.message.text)) {
       const currentText = activeResponse.reportText ? activeResponse.reportText + '\n' : '';
-      await prisma.orderResponse.update({
+      await db.orderResponse.update({
         where: { id: activeResponse.id },
         data: { reportText: currentText + ctx.message.text }
       });
@@ -242,7 +240,7 @@ async function handleMessage(ctx: BotContext) {
         const publicUrl = `/uploads/${fileName}`;
         const currentPhotos = activeResponse.reportPhotoId ? activeResponse.reportPhotoId + ',' : '';
         
-        await prisma.orderResponse.update({
+        await db.orderResponse.update({
           where: { id: activeResponse.id },
           data: { reportPhotoId: currentPhotos + publicUrl }
         });
@@ -307,7 +305,7 @@ async function handleCallbackQuery(ctx: BotContext) {
 async function handleOrderResponse(ctx: BotContext, telegramId: string, orderId: string) {
   if (!ctx.botId) return;
   
-  const contact = await prisma.contact.findUnique({
+  const contact = await db.contact.findUnique({
     where: { telegramId_botId: { telegramId, botId: ctx.botId } }
   });
   
@@ -315,7 +313,7 @@ async function handleOrderResponse(ctx: BotContext, telegramId: string, orderId:
     return ctx.answerCbQuery('Вы не зарегистрированы. Отправьте /start');
   }
   
-  const existingResponse = await prisma.orderResponse.findFirst({
+  const existingResponse = await db.orderResponse.findFirst({
     where: { orderId, employee: { telegramId } }
   });
   
@@ -323,10 +321,10 @@ async function handleOrderResponse(ctx: BotContext, telegramId: string, orderId:
     return ctx.answerCbQuery('Вы уже откликнулись на этот заказ');
   }
   
-  let employee = await prisma.employee.findFirst({ where: { telegramId } });
+  let employee = await db.employee.findFirst({ where: { telegramId } });
   
   if (!employee) {
-    employee = await prisma.employee.create({
+    employee = await db.employee.create({
       data: {
         firstName: contact.firstName || 'Неизвестно',
         lastName: contact.lastName || '',
@@ -337,7 +335,7 @@ async function handleOrderResponse(ctx: BotContext, telegramId: string, orderId:
     });
   }
   
-  await prisma.orderResponse.create({
+  await db.orderResponse.create({
     data: {
       orderId,
       employeeId: employee.id,
@@ -367,7 +365,7 @@ async function handleOrderDecline(ctx: BotContext, telegramId: string, orderId: 
  * Отказ от заказа после назначения
  */
 async function handleOrderCancel(ctx: BotContext, telegramId: string, orderId: string) {
-  const response = await prisma.orderResponse.findFirst({
+  const response = await db.orderResponse.findFirst({
     where: { orderId, employee: { telegramId } },
     include: { order: true, employee: true } // Include order and employee to pass to notification
   });
@@ -376,7 +374,7 @@ async function handleOrderCancel(ctx: BotContext, telegramId: string, orderId: s
 
   // Если работник был назначен, обновляем статус
   if (response.status === 'ASSIGNED') {
-    await prisma.orderResponse.update({
+    await db.orderResponse.update({
       where: { id: response.id },
       data: { status: 'REJECTED' }
     });
@@ -398,7 +396,7 @@ async function handleOrderCancel(ctx: BotContext, telegramId: string, orderId: s
  * Чек-ин на объекте
  */
 async function handleCheckin(ctx: BotContext, telegramId: string, orderId: string) {
-  const response = await prisma.orderResponse.findFirst({
+  const response = await db.orderResponse.findFirst({
     where: { orderId, employee: { telegramId } },
     include: { order: true, employee: true }
   });
@@ -409,7 +407,7 @@ async function handleCheckin(ctx: BotContext, telegramId: string, orderId: strin
     return ctx.answerCbQuery('Заказ уже завершён');
   }
 
-  await prisma.orderResponse.update({
+  await db.orderResponse.update({
     where: { id: response.id },
     data: { 
       status: 'CHECKED_IN',
@@ -419,14 +417,14 @@ async function handleCheckin(ctx: BotContext, telegramId: string, orderId: strin
   
   // Меняем статус заказа на IN_PROGRESS если это первый чек-ин
   if (response.order.status === 'PUBLISHED') {
-     await prisma.order.update({
+     await db.order.update({
        where: { id: orderId },
        data: { status: 'IN_PROGRESS' }
      });
   }
 
   // Обновляем статус сотрудника
-  await prisma.employee.update({
+  await db.employee.update({
     where: { id: response.employeeId },
     data: { status: 'WORKING' }
   });
@@ -453,7 +451,7 @@ async function handleCheckin(ctx: BotContext, telegramId: string, orderId: strin
  * Подтверждение выполнения работы
  */
 async function handleWorkConfirm(ctx: BotContext, telegramId: string, orderId: string) {
-  const response = await prisma.orderResponse.findFirst({
+  const response = await db.orderResponse.findFirst({
     where: { orderId, employee: { telegramId } },
     include: { order: true, employee: true }
   });
@@ -461,7 +459,7 @@ async function handleWorkConfirm(ctx: BotContext, telegramId: string, orderId: s
   if (!response) return ctx.answerCbQuery('Заказ не найден');
 
   // Обновляем статус отклика
-  await prisma.orderResponse.update({
+  await db.orderResponse.update({
     where: { id: response.id },
     data: { 
       status: 'COMPLETED',
@@ -470,7 +468,7 @@ async function handleWorkConfirm(ctx: BotContext, telegramId: string, orderId: s
   });
 
   // Создаем WorkHistory
-  await prisma.workHistory.create({
+  await db.workHistory.create({
     data: {
       employeeId: response.employeeId,
       orderId: orderId,
@@ -480,13 +478,13 @@ async function handleWorkConfirm(ctx: BotContext, telegramId: string, orderId: s
   });
 
   // Освобождаем сотрудника
-  await prisma.employee.update({
+  await db.employee.update({
     where: { id: response.employeeId },
     data: { status: 'AVAILABLE' }
   });
 
   // Проверяем, завершили ли все остальные назначенные работники
-  const allAssigned = await prisma.orderResponse.findMany({
+  const allAssigned = await db.orderResponse.findMany({
     where: { 
       orderId, 
       status: { in: ['ASSIGNED', 'CHECKED_IN'] } 
@@ -495,7 +493,7 @@ async function handleWorkConfirm(ctx: BotContext, telegramId: string, orderId: s
 
   // Если больше никого в работе нет
   if (allAssigned.length === 0) {
-    await prisma.order.update({
+    await db.order.update({
       where: { id: orderId },
       data: { status: 'COMPLETED' }
     });
@@ -517,13 +515,13 @@ async function handleWorkConfirm(ctx: BotContext, telegramId: string, orderId: s
  * Обработка оценки от менеджера (через бота менеджера)
  */
 async function handleRating(ctx: BotContext, orderId: string, employeeId: string, score: number) {
-  const response = await prisma.orderResponse.findFirst({
+  const response = await db.orderResponse.findFirst({
     where: { orderId, employeeId }
   });
 
   if (!response) return ctx.answerCbQuery('Отклик не найден');
 
-  await prisma.orderResponse.update({
+  await db.orderResponse.update({
     where: { id: response.id },
     data: { 
       rating: score,
@@ -532,7 +530,7 @@ async function handleRating(ctx: BotContext, orderId: string, employeeId: string
   });
 
   // Пересчет среднего рейтинга сотрудника
-  const allRatings = await prisma.orderResponse.findMany({
+  const allRatings = await db.orderResponse.findMany({
     where: { employeeId, rating: { not: null } },
     select: { rating: true }
   });
@@ -541,7 +539,7 @@ async function handleRating(ctx: BotContext, orderId: string, employeeId: string
     const total = allRatings.reduce((sum, r) => sum + (r.rating || 0), 0);
     const avg = total / allRatings.length;
     
-    await prisma.employee.update({
+    await db.employee.update({
       where: { id: employeeId },
       data: { rating: avg }
     });
@@ -673,7 +671,7 @@ export async function sendAssignmentNotification(
  * Инициализация всех активных ботов из БД
  */
 export async function initializeBots() {
-  const activeBots = await prisma.bot.findMany({ where: { isActive: true } });
+  const activeBots = await db.bot.findMany({ where: { isActive: true } });
   
   for (const botData of activeBots) {
     try {
