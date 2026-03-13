@@ -68,4 +68,5 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 # Start the application
-CMD prisma migrate deploy && node server.js
+# ВРЕМЕННО: Сброс базы из-за failed migration, после успешного деплоя вернуть обратно на migrate deploy
+CMD prisma migrate reset --force --skip-seed && node server.js
