@@ -13,7 +13,15 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, MoreHorizontal, Eye, Edit, Trash2, Star, Phone, MessageCircle, Loader2 } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Eye, Edit, Trash2, Star, Phone, MessageCircle, Loader2, CheckCircle, Ban, Clock, UserX } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const employeeStatusConfig: Record<string, { label: string; color: string }> = {
   AVAILABLE: { label: "Доступен", color: "bg-green-500" },
@@ -87,9 +95,35 @@ export default function EmployeesPage() {
     } catch (error) { toast({ title: "Ошибка", description: "Не удалось добавить сотрудника", variant: "destructive" }); }
   };
 
-  const handleStatusChange = (employeeId: string, newStatus: string) => {
-    setEmployees(employees.map(emp => emp.id === employeeId ? { ...emp, status: newStatus } : emp));
-    toast({ title: "Статус обновлен" });
+  const handleStatusChange = async (employeeId: string, newStatus: string) => {
+    try {
+      const response = await fetch(`/api/employees/${employeeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (response.ok) {
+        setEmployees(employees.map(emp => emp.id === employeeId ? { ...emp, status: newStatus } : emp));
+        toast({ title: "Статус обновлен" });
+      }
+    } catch (error) {
+      toast({ title: "Ошибка", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteEmployee = async (id: string) => {
+    if (!window.confirm("Вы уверены, что хотите удалить этого сотрудника? Все его данные и история будут удалены.")) return;
+    
+    try {
+      const response = await fetch(`/api/employees/${id}`, { method: "DELETE" });
+      if (response.ok) {
+        setEmployees(employees.filter(emp => emp.id !== id));
+        toast({ title: "Сотрудник удален" });
+      }
+    } catch (error) {
+      toast({ title: "Ошибка удаления", variant: "destructive" });
+    }
   };
 
   if (status === "loading") return <div className="p-6">Загрузка...</div>;
@@ -117,7 +151,39 @@ export default function EmployeesPage() {
       <Card><CardContent className="p-0">
         {loading ? <div className="p-6 text-center">Загрузка...</div> : employees.length === 0 ? <div className="p-6 text-center text-muted-foreground">Сотрудники не найдены</div> : (
           <Table><TableHeader><TableRow><TableHead>Сотрудник</TableHead><TableHead>Контакты</TableHead><TableHead>Рейтинг</TableHead><TableHead>Статус</TableHead><TableHead>Теги</TableHead><TableHead className="text-right">Действия</TableHead></TableRow></TableHeader><TableBody>
-            {employees.map((emp) => (<TableRow key={emp.id}><TableCell><div className="font-medium">{emp.lastName} {emp.firstName}</div>{emp.middleName && <div className="text-sm text-muted-foreground">{emp.middleName}</div>}</TableCell><TableCell><div className="flex items-center gap-1"><Phone className="h-3 w-3" />{emp.phone}</div>{emp.telegramId && <div className="text-xs text-muted-foreground flex items-center gap-1"><MessageCircle className="h-3 w-3" />{emp.telegramId}</div>}</TableCell><TableCell><div className="flex items-center gap-1"><Star className="h-4 w-4 text-yellow-500" />{formatRating(emp.rating)}</div></TableCell><TableCell><div className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full ${employeeStatusConfig[emp.status]?.color}`} /><span>{employeeStatusConfig[emp.status]?.label}</span></div></TableCell><TableCell><div className="flex flex-wrap gap-1">{emp.tags?.slice(0, 3).map((t: any) => <Badge key={t.id} style={{backgroundColor: t.color}}>{t.name}</Badge>)}</div></TableCell><TableCell className="text-right"><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></TableCell></TableRow>))}
+            {employees.map((emp) => (<TableRow key={emp.id}><TableCell><div className="font-medium">{emp.lastName} {emp.firstName}</div>{emp.middleName && <div className="text-sm text-muted-foreground">{emp.middleName}</div>}</TableCell><TableCell><div className="flex items-center gap-1"><Phone className="h-3 w-3" />{emp.phone}</div>{emp.telegramId && <div className="text-xs text-muted-foreground flex items-center gap-1"><MessageCircle className="h-3 w-3" />{emp.telegramId}</div>}</TableCell><TableCell><div className="flex items-center gap-1"><Star className="h-4 w-4 text-yellow-500" />{formatRating(emp.rating)}</div></TableCell><TableCell><div className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full ${employeeStatusConfig[emp.status]?.color}`} /><span>{employeeStatusConfig[emp.status]?.label}</span></div></TableCell><TableCell><div className="flex flex-wrap gap-1">{emp.tags?.slice(0, 3).map((t: any) => <Badge key={t.id} style={{backgroundColor: t.color}}>{t.name}</Badge>)}</div></TableCell><TableCell className="text-right">
+  <DropdownMenu>
+    <DropdownMenuTrigger asChild>
+      <Button variant="ghost" size="icon">
+        <MoreHorizontal className="h-4 w-4" />
+      </Button>
+    </DropdownMenuTrigger>
+    <DropdownMenuContent align="end">
+      <DropdownMenuLabel>Действия</DropdownMenuLabel>
+      <DropdownMenuItem onClick={() => router.push(`/employees/${emp.id}`)}>
+        <Eye className="mr-2 h-4 w-4" />Просмотр
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onClick={() => handleStatusChange(emp.id, "AVAILABLE")} disabled={emp.status === "AVAILABLE"}>
+        <CheckCircle className="mr-2 h-4 w-4 text-green-600" />Доступен
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => handleStatusChange(emp.id, "BUSY")} disabled={emp.status === "BUSY"}>
+        <Clock className="mr-2 h-4 w-4 text-yellow-600" />Занят
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => handleStatusChange(emp.id, "BANNED")} disabled={emp.status === "BANNED"}>
+        <UserX className="mr-2 h-4 w-4 text-red-600" />Заблокировать
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem 
+        onClick={() => handleDeleteEmployee(emp.id)} 
+        className="text-destructive"
+      >
+        <Trash2 className="mr-2 h-4 w-4" />Удалить полностью
+      </DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenu>
+</TableCell>
+</TableRow>))}
           </TableBody></Table>)}
         </CardContent></Card>
     </div>

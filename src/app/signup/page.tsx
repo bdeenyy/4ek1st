@@ -50,7 +50,7 @@ export default function SignupPage() {
           title: "Добро пожаловать!",
           description: "Аккаунт создан и вы автоматически авторизованы.",
         });
-        router.push("/");
+        window.location.href = "/";
       } else {
         // Если авто-авторизация не удалась, перенаправляем на логин
         toast({

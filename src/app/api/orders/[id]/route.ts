@@ -100,6 +100,10 @@ export async function DELETE(
   try {
     const { id } = await params;
     
+    // Уведомляем всех откликнувшихся об отмене
+    const { notifyOrderCancelled } = await import("@/lib/notifications");
+    await notifyOrderCancelled(id, "Заказ удален");
+
     // Удаляем связанные отклики
     await db.orderResponse.deleteMany({
       where: { orderId: id },

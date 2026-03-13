@@ -302,11 +302,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
       if (response.ok) {
         fetchOrder();
+        setIsRatingDialogOpen(false);
+        setRatingResponseId(null);
         toast({
-          title: "Оценка выставлена",
+          title: "Оценка сохранена",
           description: "Рейтинг сотрудника обновлен",
         });
-      } else {
         throw new Error("Failed");
       }
     } catch (error) {
@@ -353,6 +354,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             <div className={cn("w-2 h-2 rounded-full mr-2", paymentStatusConfig[order.paymentStatus]?.color)} />
             {paymentStatusConfig[order.paymentStatus]?.label}
           </Badge>
+          <Button variant="outline" size="sm" className="text-destructive ml-2" onClick={handleDeleteOrder}>
+            <Trash2 className="h-4 w-4 mr-1" />
+            Удалить
+          </Button>
         </div>
       </div>
 

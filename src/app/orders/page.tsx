@@ -18,7 +18,7 @@ import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, MoreHorizontal, Eye, Edit, CalendarIcon, CheckCircle, XCircle, Clock, Phone } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Eye, Edit, CalendarIcon, CheckCircle, XCircle, Clock, Phone, Send, Trash2 } from "lucide-react";
 
 const orderStatusConfig: Record<string, { label: string; color: string }> = {
   DRAFT: { label: "Черновик", color: "bg-gray-500" },
@@ -108,8 +108,41 @@ export default function OrdersPage() {
   };
 
   const handleStatusChange = async (orderId: string, newStatus: string) => {
-    setOrders(orders.map(order => order.id === orderId ? { ...order, status: newStatus } : order));
-    toast({ title: "Статус обновлен", description: `Статус заказа изменен на ${orderStatusConfig[newStatus]?.label}` });
+    try {
+      const response = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (response.ok) {
+        setOrders(orders.map(order => order.id === orderId ? { ...order, status: newStatus } : order));
+        toast({ title: "Статус обновлен", description: `Статус заказа изменен на ${orderStatusConfig[newStatus]?.label}` });
+      }
+    } catch (error) {
+      toast({ title: "Ошибка", description: "Не удалось обновить статус", variant: "destructive" });
+    }
+  };
+
+  const handlePublishOrder = async (orderId: string) => {
+    try {
+      const response = await fetch("/api/orders/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setOrders(orders.map(order => order.id === orderId ? { ...order, status: "PUBLISHED" } : order));
+        toast({ 
+          title: "Заказ опубликован", 
+          description: `Бот разослал уведомления (${result.sentCount} чел.)` 
+        });
+      }
+    } catch (error) {
+      toast({ title: "Ошибка публикации", variant: "destructive" });
+    }
   };
 
   const filteredOrders = orders.filter((order) => {
@@ -337,10 +370,12 @@ export default function OrdersPage() {
                           <DropdownMenuItem onClick={() => router.push(`/orders/${order.id}`)}>
                             <Eye className="mr-2 h-4 w-4" />Просмотр
                           </DropdownMenuItem>
-                          <DropdownMenuItem><Edit className="mr-2 h-4 w-4" />Редактировать</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => router.push(`/orders/${order.id}`)}>
+                            <Edit className="mr-2 h-4 w-4" />Редактировать
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => handleStatusChange(order.id, "PUBLISHED")} disabled={order.status === "PUBLISHED"}>
-                            <CheckCircle className="mr-2 h-4 w-4" />Опубликовать
+                          <DropdownMenuItem onClick={() => handlePublishOrder(order.id)} disabled={order.status === "PUBLISHED"}>
+                            <Send className="mr-2 h-4 w-4" />Опубликовать
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleStatusChange(order.id, "IN_PROGRESS")} disabled={order.status === "IN_PROGRESS"}>
                             <Clock className="mr-2 h-4 w-4" />В работу
@@ -348,8 +383,26 @@ export default function OrdersPage() {
                           <DropdownMenuItem onClick={() => handleStatusChange(order.id, "COMPLETED")} disabled={order.status === "COMPLETED"}>
                             <CheckCircle className="mr-2 h-4 w-4" />Завершить
                           </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            onClick={async () => {
+                              if (window.confirm("Вы уверены, что хотите удалить этот заказ? Это также отправит уведомление об отмене всем откликнувшимся.")) {
+                                try {
+                                  const res = await fetch(`/api/orders/${order.id}`, { method: "DELETE" });
+                                  if (res.ok) {
+                                    setOrders(orders.filter(o => o.id !== order.id));
+                                    toast({ title: "Заказ удален" });
+                                  }
+                                } catch (error) {
+                                  toast({ title: "Ошибка удаления", variant: "destructive" });
+                                }
+                              }
+                            }} 
+                            className="text-destructive"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />Удалить полностью
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleStatusChange(order.id, "CANCELLED")} disabled={order.status === "CANCELLED"} className="text-destructive">
-                            <XCircle className="mr-2 h-4 w-4" />Отменить
+                            <XCircle className="mr-2 h-4 w-4" />Отменить (архив)
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>

@@ -40,8 +40,7 @@ export default function LoginPage() {
           title: "Успешный вход",
           description: "Добро пожаловать в Staffy",
         });
-        router.push("/");
-        router.refresh();
+        window.location.href = "/";
       }
     } catch (error) {
       toast({

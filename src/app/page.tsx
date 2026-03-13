@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Header } from "@/components/header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -34,11 +35,22 @@ import {
   Star,
   Bot,
   MessageSquare,
-  TrendingDown,
-  Loader2,
-  CheckCircle,
-  Ban,
+  MoreHorizontal,
+  Clock,
+  XCircle,
+  Trash2,
+  Edit,
+  Send,
+  LayoutDashboard,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -109,23 +121,86 @@ function DashboardTab() {
 
   const stats = [
     { title: "Активных заказов", value: data?.stats.activeOrders || 0, icon: ClipboardList, color: "text-blue-600", bg: "bg-blue-100" },
-    { title: "Сотрудников в работе", value: data?.stats.workingEmployees || 0, icon: Users, color: "text-green-600", bg: "bg-green-100" },
+    { title: "Всего сотрудников", value: data?.stats.totalEmployees || 0, icon: Users, color: "text-green-600", bg: "bg-green-100" },
     { title: "Выручка", value: formatCurrency(data?.financials.totalIncome || 0), icon: DollarSign, color: "text-emerald-600", bg: "bg-emerald-100" },
     { title: "Прибыль", value: formatCurrency(data?.financials.profit || 0), icon: TrendingUp, color: "text-purple-600", bg: "bg-purple-100" },
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {stats.map((s) => (
-          <Card key={s.title}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{s.title}</CardTitle>
-              <div className={cn("p-2 rounded-lg", s.bg)}><s.icon className={cn("h-4 w-4", s.color)} /></div>
-            </CardHeader>
-            <CardContent><div className="text-2xl font-bold">{s.value}</div></CardContent>
-          </Card>
-        ))}
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base font-semibold">Последние отклики</CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => (window.location.href = '/moderation')}>
+              Все
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {data?.recentResponses?.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">Нет новых откликов</p>
+              ) : (
+                data?.recentResponses?.map((resp: any) => (
+                  <div key={resp.id} className="flex items-center justify-between border-b pb-3 last:border-0 last:pb-0">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-8 w-8">
+                        <AvatarFallback>{resp.employee.firstName[0]}{resp.employee.lastName[0]}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">{resp.employee.firstName} {resp.employee.lastName}</span>
+                        <span className="text-xs text-muted-foreground">{resp.order.title}</span>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => (window.location.href = `/orders/${resp.order.id}`)}>
+                      Просмотр
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base font-semibold">Недавние заказы</CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => (window.location.href = '/orders')}>
+              Все
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {data?.recentOrders?.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">Заказы не найдены</p>
+              ) : (
+                data?.recentOrders?.map((order: any) => (
+                  <div key={order.id} className="flex items-center justify-between border-b pb-3 last:border-0 last:pb-0">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium">{order.title}</span>
+                      <div className="flex items-center gap-2 mt-1">
+                         <Badge variant="outline" className="text-[10px] h-4 px-1">{order.bot.city}</Badge>
+                         <span className="text-xs text-muted-foreground">
+                           {order.responses.filter((r: any) => r.status === 'ASSIGNED').length}/{order.requiredPeople} чел.
+                         </span>
+                      </div>
+                    </div>
+                    <Badge className={cn("text-[10px] h-4 px-1", 
+                      order.status === 'DRAFT' ? 'bg-gray-500' :
+                      order.status === 'PUBLISHED' ? 'bg-blue-500' :
+                      order.status === 'IN_PROGRESS' ? 'bg-yellow-500' :
+                      order.status === 'COMPLETED' ? 'bg-green-500' : 'bg-red-500'
+                    )}>
+                      {order.status === 'DRAFT' ? 'Черновик' :
+                       order.status === 'PUBLISHED' ? 'Опубликован' :
+                       order.status === 'IN_PROGRESS' ? 'В работе' :
+                       order.status === 'COMPLETED' ? 'Завершен' : 'Отменен'}
+                    </Badge>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -159,7 +234,6 @@ function DashboardTab() {
           </CardContent>
         </Card>
       </div>
-    </div>
   );
 }
 
@@ -393,13 +467,29 @@ function BotsTab() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-medium">Telegram-боты</h3>
-        <AddBotDialog onBotAdded={() => {
-          setLoading(true);
-          fetch("/api/bots")
-            .then((res) => res.json())
-            .then(setBots)
-            .finally(() => setLoading(false));
-        }} />
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={async () => {
+            try {
+              const res = await fetch("/api/bots/sync");
+              if (res.ok) {
+                toast({ title: "Синхронизация завершена" });
+                // Refresh bots list
+                fetch("/api/bots").then(res => res.json()).then(setBots);
+              }
+            } catch (err) {
+              toast({ title: "Ошибка синхронизации", variant: "destructive" });
+            }
+          }}>
+            Синхронизировать данные
+          </Button>
+          <AddBotDialog onBotAdded={() => {
+            setLoading(true);
+            fetch("/api/bots")
+              .then((res) => res.json())
+              .then(setBots)
+              .finally(() => setLoading(false));
+          }} />
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -622,17 +712,165 @@ function FinancesTab() {
   );
 }
 
+// Orders Tab (simplified list for dashboard)
+function OrdersTab() {
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+  const router = useRouter();
+
+  useEffect(() => {
+    fetch("/api/orders")
+      .then((res) => res.json())
+      .then(setOrders)
+      .catch(() => toast({ title: "Ошибка загрузки заказов", variant: "destructive" }))
+      .finally(() => setLoading(false));
+  }, [toast]);
+
+  const handleStatusChange = async (orderId: string, newStatus: string) => {
+    try {
+      const response = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (response.ok) {
+        setOrders(orders.map(order => order.id === orderId ? { ...order, status: newStatus } : order));
+        toast({ title: "Статус обновлен" });
+      }
+    } catch (error) {
+      toast({ title: "Ошибка", variant: "destructive" });
+    }
+  };
+
+  const handlePublishOrder = async (orderId: string) => {
+    try {
+      const response = await fetch("/api/orders/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setOrders(orders.map(order => order.id === orderId ? { ...order, status: "PUBLISHED" } : order));
+        toast({ title: "Заказ опубликован", description: `Уведомления отправлены (${result.sentCount})` });
+      }
+    } catch (error) {
+      toast({ title: "Ошибка публикации", variant: "destructive" });
+    }
+  };
+
+  return (
+    <Card>
+      <CardContent className="p-0">
+        {loading ? (
+          <div className="p-6 space-y-4">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-16" />)}</div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Заказ</TableHead>
+                <TableHead>Клиент</TableHead>
+                <TableHead>Дата</TableHead>
+                <TableHead>Статус</TableHead>
+                <TableHead className="text-right">Действие</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {orders.map((order) => (
+                <TableRow key={order.id}>
+                  <TableCell>
+                    <div className="font-medium">{order.title}</div>
+                    <div className="text-xs text-muted-foreground">{order.bot?.city}</div>
+                  </TableCell>
+                  <TableCell className="text-sm">{order.clientName}</TableCell>
+                  <TableCell className="text-sm">{formatDate(order.workDate)}</TableCell>
+                  <TableCell>
+                    <Badge className={cn("text-xs font-normal", 
+                      order.status === 'DRAFT' ? 'bg-gray-500' :
+                      order.status === 'PUBLISHED' ? 'bg-blue-500' :
+                      order.status === 'IN_PROGRESS' ? 'bg-yellow-500' :
+                      order.status === 'COMPLETED' ? 'bg-green-500' : 'bg-red-500'
+                    )}>
+                      {order.status === 'DRAFT' ? 'Черновик' :
+                       order.status === 'PUBLISHED' ? 'Опубликован' :
+                       order.status === 'IN_PROGRESS' ? 'В работе' :
+                       order.status === 'COMPLETED' ? 'Завершен' : 'Отменен'}
+                    </Badge>
+                  </TableCell>
+                   <TableCell className="text-right">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Действия</DropdownMenuLabel>
+                        <DropdownMenuItem onClick={() => router.push(`/orders/${order.id}`)}>
+                          <Eye className="mr-2 h-4 w-4" />Просмотр
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => router.push(`/orders/${order.id}`)}>
+                          <Edit className="mr-2 h-4 w-4" />Редактировать
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => handlePublishOrder(order.id)} disabled={order.status === "PUBLISHED"}>
+                          <Send className="mr-2 h-4 w-4" />Опубликовать
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleStatusChange(order.id, "IN_PROGRESS")} disabled={order.status === "IN_PROGRESS"}>
+                          <Clock className="mr-2 h-4 w-4" />В работу
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleStatusChange(order.id, "COMPLETED")} disabled={order.status === "COMPLETED"}>
+                          <CheckCircle className="mr-2 h-4 w-4" />Завершить
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          onClick={async () => {
+                            if (window.confirm("Вы уверены, что хотите удалить этот заказ?")) {
+                              try {
+                                const res = await fetch(`/api/orders/${order.id}`, { method: "DELETE" });
+                                if (res.ok) {
+                                  setOrders(orders.filter(o => o.id !== order.id));
+                                  toast({ title: "Заказ удален" });
+                                } else {
+                                  toast({ title: "Ошибка удаления", variant: "destructive" });
+                                }
+                              } catch (error) {
+                                toast({ title: "Ошибка удаления", variant: "destructive" });
+                              }
+                            }
+                          }} 
+                          className="text-destructive"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />Удалить
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // Main Page
-export default function Personal24Page() {
+export default function StaffyMainPage() {
   const [activeTab, setActiveTab] = useState("dashboard");
+  const router = useRouter();
 
   return (
     <div className="flex flex-col min-h-screen">
       <Header title="Staffy" />
       <main className="flex-1 p-4 md:p-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="dashboard" className="flex items-center gap-2"><ClipboardList className="h-4 w-4" /><span className="hidden sm:inline">Дашборд</span></TabsTrigger>
+          <TabsList className="grid w-full grid-cols-6">
+            <TabsTrigger value="dashboard" className="flex items-center gap-2"><LayoutDashboard className="h-4 w-4" /><span className="hidden sm:inline">Дашборд</span></TabsTrigger>
+            <TabsTrigger value="orders-tab" className="flex items-center gap-2"><ClipboardList className="h-4 w-4" /><span className="hidden sm:inline">Заказы</span></TabsTrigger>
             <TabsTrigger value="employees" className="flex items-center gap-2"><Users className="h-4 w-4" /><span className="hidden sm:inline">Сотрудники</span></TabsTrigger>
             <TabsTrigger value="bots" className="flex items-center gap-2"><Bot className="h-4 w-4" /><span className="hidden sm:inline">Боты</span></TabsTrigger>
             <TabsTrigger value="contacts" className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /><span className="hidden sm:inline">Модерация</span></TabsTrigger>
@@ -640,6 +878,7 @@ export default function Personal24Page() {
           </TabsList>
 
           <TabsContent value="dashboard"><DashboardTab /></TabsContent>
+          <TabsContent value="orders-tab"><OrdersTab /></TabsContent>
           <TabsContent value="employees"><EmployeesTab /></TabsContent>
           <TabsContent value="bots"><BotsTab /></TabsContent>
           <TabsContent value="contacts"><ContactsTab /></TabsContent>

@@ -321,7 +321,7 @@ export async function notifyOrderCancelled(
         bot: true,
         responses: {
           where: {
-            status: 'ASSIGNED'
+            status: { in: ['ASSIGNED', 'PENDING'] }
           },
           include: {
             employee: true

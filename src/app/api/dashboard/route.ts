@@ -17,7 +17,7 @@ export async function GET() {
       bots,
     ] = await Promise.all([
       db.order.count(),
-      db.order.count({ where: { status: "IN_PROGRESS" } }),
+      db.order.count({ where: { status: { in: ["PUBLISHED", "IN_PROGRESS"] } } }),
       db.order.count({ where: { status: "COMPLETED" } }),
       db.employee.count(),
       db.employee.count({ where: { status: "AVAILABLE" } }),
