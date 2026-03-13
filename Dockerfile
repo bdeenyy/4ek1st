@@ -68,5 +68,4 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 # Start the application
-# --skip-generate because Prisma Client is already generated during build
-CMD prisma migrate deploy --skip-generate && node server.js
+CMD prisma migrate deploy && node server.js
