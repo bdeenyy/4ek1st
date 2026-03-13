@@ -6,8 +6,9 @@ echo "Starting application and configuring database for Amvera..."
 
 # Apply Prisma migrations (this creates the database tables if they don't exist)
 # Npx will download the prisma CLI momentarily if it's not present (perfect for standalone images)
+# We pin to version 6 to avoid breaking changes in Prisma 7 (P1012 error)
 echo "Applying database schema..."
-npx --yes prisma db push --accept-data-loss
+npx --yes prisma@6 db push --accept-data-loss
 
 # Run the seed script compiled to vanilla JS during the Docker build
 echo "Seeding database..."
