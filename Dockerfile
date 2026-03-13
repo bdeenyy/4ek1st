@@ -35,6 +35,9 @@ ENV NODE_ENV=production
 # Build the application
 RUN bun run build
 
+# Compile seed script
+RUN bun build ./prisma/seed.ts --target=node --outfile=./prisma/seed.js --external @prisma/client
+
 # Production image, copy all the files and run next
 FROM base AS runner
 WORKDIR /app
@@ -50,11 +53,12 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/start.sh ./start.sh
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
 # Set proper permissions
-RUN chown -R nextjs:nodejs /app
+RUN chown -R nextjs:nodejs /app && chmod +x ./start.sh
 
 USER nextjs
 
@@ -64,4 +68,4 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 # Start the application
-CMD ["node", "server.js"]
+CMD ["./start.sh"]
