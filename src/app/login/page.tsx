@@ -58,8 +58,8 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
-            <div className="p-0 rounded-xl overflow-hidden bg-transparent border-none">
-              <img src="/logo.png" alt="Staffy Logo" className="h-20 w-auto" />
+            <div className="p-3 bg-blue-600 rounded-xl">
+              <Building2 className="h-12 w-12 text-white" />
             </div>
           </div>
           <CardTitle className="text-2xl text-center">Staffy</CardTitle>
@@ -74,7 +74,7 @@ export default function LoginPage() {
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@personal24.ru"
+                placeholder="your@staffy.ru"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required

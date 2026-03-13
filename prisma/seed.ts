@@ -8,7 +8,7 @@ async function main() {
   // Создаем пользователя-администратора
   const admin = await db.user.create({
     data: {
-      email: "admin@personal24.ru",
+      email: "admin@staffy.ru",
       name: "Администратор",
       password: hashedPassword,
       role: "ADMIN",
@@ -18,7 +18,7 @@ async function main() {
   // Создаем пользователя-менеджера
   const manager = await db.user.create({
     data: {
-      email: "manager@personal24.ru",
+      email: "manager@staffy.ru",
       name: "Менеджер Москва",
       password: hashedPassword,
       role: "MANAGER",
