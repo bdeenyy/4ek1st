@@ -1,17 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Building2, Loader2 } from "lucide-react";
+import { Building2, Loader2, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
 
-export default function LoginPage() {
+export default function SignupPage() {
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -23,30 +23,30 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const result = await signIn("credentials", {
-        email,
-        password,
-        redirect: false,
+      const response = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name, email, password }),
       });
 
-      if (result?.error) {
-        toast({
-          title: "Ошибка входа",
-          description: "Неверный email или пароль",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Успешный вход",
-          description: "Добро пожаловать в Staffy",
-        });
-        router.push("/");
-        router.refresh();
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Ошибка при регистрации");
       }
-    } catch (error) {
+
+      toast({
+        title: "Успех!",
+        description: "Аккаун создан. Теперь вы можете войти.",
+      });
+      
+      router.push("/login");
+    } catch (error: any) {
       toast({
         title: "Ошибка",
-        description: "Произошла ошибка при входе",
+        description: error.message,
         variant: "destructive",
       });
     } finally {
@@ -58,18 +58,35 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
+          <div className="flex items-center justify-between mb-2">
+            <Button variant="ghost" size="icon" asChild>
+              <Link href="/login">
+                <ArrowLeft className="h-5 w-5" />
+              </Link>
+            </Button>
+          </div>
           <div className="flex items-center justify-center mb-4">
             <div className="p-3 bg-blue-600 rounded-xl">
               <Building2 className="h-12 w-12 text-white" />
             </div>
           </div>
-          <CardTitle className="text-2xl text-center">Staffy</CardTitle>
+          <CardTitle className="text-2xl text-center">Регистрация в Staffy</CardTitle>
           <CardDescription className="text-center">
-            Войдите в систему управления персоналом
+            Создайте аккаунт администратора для управления персоналом
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Имя</Label>
+              <Input
+                id="name"
+                placeholder="Иван Иванов"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -96,29 +113,18 @@ export default function LoginPage() {
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Вход...
+                  Создание аккаунта...
                 </>
               ) : (
-                "Войти"
+                "Зарегистрироваться"
               )}
             </Button>
           </form>
-          
           <div className="mt-4 text-center text-sm">
-            Нет аккаунта?{" "}
-            <Link href="/signup" className="text-blue-600 hover:underline font-medium">
-              Зарегистрироваться
+            Уже есть аккаунт?{" "}
+            <Link href="/login" className="text-blue-600 hover:underline font-medium">
+              Войти
             </Link>
-          </div>
-
-          <div className="mt-6 text-sm text-center text-muted-foreground border-t pt-4">
-            <p>Тестовые учетные данные:</p>
-            <p className="mt-2">
-              <strong>Администратор:</strong> admin@staffy.ru / password
-            </p>
-            <p>
-              <strong>Менеджер:</strong> manager@staffy.ru / password
-            </p>
           </div>
         </CardContent>
       </Card>

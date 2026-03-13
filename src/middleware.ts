@@ -25,6 +25,7 @@ export default withAuth(
         // Разрешаем доступ к публичным страницам без авторизации
         if (
           pathname.startsWith("/login") ||
+          pathname.startsWith("/signup") ||
           pathname.startsWith("/api/auth") ||
           pathname.startsWith("/_next") ||
           pathname === "/favicon.ico"
