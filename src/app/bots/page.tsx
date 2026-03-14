@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Header } from "@/components/header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreVertical, RefreshCw, PowerOff, Trash2, Power, Info } from "lucide-react";
+import { MoreVertical, RefreshCw, PowerOff, Trash2, Power, Info, Pencil } from "lucide-react";
 
 // Add Bot Dialog Component
 function AddBotDialog({ onBotAdded }: { onBotAdded: () => void }) {
@@ -145,9 +145,101 @@ function AddBotDialog({ onBotAdded }: { onBotAdded: () => void }) {
   );
 }
 
+
+// Edit Bot Dialog Component
+function EditBotDialog({ bot, onSaved }: { bot: any; onSaved: (updated: any) => void }) {
+  const [loading, setLoading] = React.useState(false);
+  const { toast } = useToast();
+  const [formData, setFormData] = React.useState({
+    name: bot.name ?? "",
+    city: bot.city ?? "",
+    description: bot.description ?? "",
+    telegramManagerId: bot.telegramManagerId ?? "",
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const res = await fetch('/api/bots/' + bot.id, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const updated = await res.json();
+      toast({ title: "Бот обновлён", description: "Данные бота сохранены" });
+      onSaved(updated);
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось сохранить", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <DialogHeader>
+        <DialogTitle>Редактировать бота</DialogTitle>
+        <DialogDescription>
+          Измените настройки бота. Название и описание обновятся в Telegram автоматически.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-4 py-4">
+        <div className="grid gap-2">
+          <Label htmlFor="edit-name">Название (для панели)</Label>
+          <Input
+            id="edit-name"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            required
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="edit-city">Город</Label>
+          <Input
+            id="edit-city"
+            value={formData.city}
+            onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+            required
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="edit-description">Описание</Label>
+          <Textarea
+            id="edit-description"
+            placeholder="Описание бота..."
+            value={formData.description}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="edit-manager">Telegram ID менеджера</Label>
+          <Input
+            id="edit-manager"
+            placeholder="123456789"
+            value={formData.telegramManagerId}
+            onChange={(e) => setFormData({ ...formData, telegramManagerId: e.target.value })}
+          />
+          <p className="text-xs text-muted-foreground">
+            Ваш Telegram ID — пришлите /start боту @userinfobot чтобы узнать. Уведомления о новых откликах будут приходить именно вам.
+          </p>
+        </div>
+      </div>
+      <DialogFooter>
+        <Button type="submit" disabled={loading}>
+          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Сохранить
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
 export default function BotsPage() {
   const [bots, setBots] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editBot, setEditBot] = useState<any | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -318,6 +410,11 @@ export default function BotsPage() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Управление ботом</DropdownMenuLabel>
                           <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => setEditBot(bot)}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Редактировать
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
                           <DropdownMenuItem onClick={() => handleCheckBotStatus(bot.id)}>
                             <Info className="mr-2 h-4 w-4" />
                             Проверить статус
@@ -360,6 +457,21 @@ export default function BotsPage() {
           )}
         </div>
       </main>
+
+      {/* Edit Bot Dialog */}
+      <Dialog open={!!editBot} onOpenChange={(open) => { if (!open) setEditBot(null); }}>
+        <DialogContent className="sm:max-w-[480px]">
+          {editBot && (
+            <EditBotDialog
+              bot={editBot}
+              onSaved={(updated) => {
+                setBots(bots.map((b) => (b.id === updated.id ? { ...b, ...updated } : b)));
+                setEditBot(null);
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

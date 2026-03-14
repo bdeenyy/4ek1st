@@ -43,8 +43,9 @@ model Bot {
   description String?
   city        String
   avatar      String?
-  isActive    Boolean  @default(true)
-  subscriberCount Int   @default(0)
+  isActive          Boolean  @default(true)
+  subscriberCount   Int      @default(0)
+  telegramManagerId String?  // Telegram ID менеджера для уведомлений
   ownerId     String
   owner       User     @relation("BotOwner", fields: [ownerId], references: [id])
   createdAt   DateTime @default(now())

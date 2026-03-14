@@ -58,6 +58,11 @@ const menuItems = [
     ],
   },
   {
+    title: "Клиенты",
+    url: "/clients",
+    icon: Building2,
+  },
+  {
     title: "Сотрудники",
     url: "/employees",
     icon: Users,
