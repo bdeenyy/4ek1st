@@ -48,35 +48,40 @@ async function handleStart(ctx: BotContext) {
     });
     
     if (!contact) {
-      // Создаем новый контакт
-      contact = await db.contact.create({
-        data: {
-          telegramId,
-          firstName: firstName || null,
-          lastName: lastName || null,
-          username: username || null,
-          botId: ctx.botId,
-          status: 'NEW'
-        }
-      });
-      
-      // Обновляем счётчик подписчиков (общее кол-во контактов для этого бота)
-      const totalCount = await db.contact.count({
-        where: { botId: ctx.botId }
-      });
-
-      await db.bot.update({
-        where: { id: ctx.botId },
-        data: { subscriberCount: totalCount }
-      });
-
+      // Новый пользователь — сначала запрашиваем согласие на обработку ПД (152-ФЗ)
       await ctx.reply(
         `👋 Добро пожаловать, ${firstName || 'друг'}!\n\n` +
-        `Вы успешно зарегистрированы в системе.\n` +
-        `Ожидайте подтверждения от менеджера.`,
-        Markup.keyboard([['📋 Мои заказы', '👤 Профиль']]).resize()
+        `Для регистрации в системе необходимо ваше согласие на обработку персональных данных.\n\n` +
+        `📄 Нажимая кнопку *«Принимаю»*, вы соглашаетесь с обработкой ваших персональных данных ` +
+        `(имя, телефон, Telegram ID) в соответствии с Федеральным законом № 152-ФЗ ` +
+        `«О персональных данных» для организации временного трудоустройства.\n\n` +
+        `Ознакомиться с политикой конфиденциальности можно на нашем сайте.`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('✅ Принимаю условия', `consent_accept_${ctx.botId}`)],
+            [Markup.button.callback('❌ Отказываюсь', `consent_decline_${ctx.botId}`)]
+          ])
+        }
       );
-    } else {
+      return;
+    }
+
+    if (!contact.consentGivenAt) {
+      // Контакт существует, но не дал согласие — повторный запрос
+      await ctx.reply(
+        `Для использования бота необходимо принять условия обработки персональных данных.`,
+        {
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('✅ Принимаю условия', `consent_accept_${ctx.botId}`)],
+            [Markup.button.callback('❌ Отказываюсь', `consent_decline_${ctx.botId}`)]
+          ])
+        }
+      );
+      return;
+    }
+
+    if (contact && contact.consentGivenAt) {
       // Обновляем информацию
       await db.contact.update({
         where: { 
@@ -281,7 +286,13 @@ async function handleCallbackQuery(ctx: BotContext) {
   if (!telegramId || !data) return;
   
   try {
-    if (data.startsWith('respond_')) {
+    if (data.startsWith('consent_accept_')) {
+      await handleConsentAccept(ctx, telegramId, data.replace('consent_accept_', ''));
+    }
+    else if (data.startsWith('consent_decline_')) {
+      await handleConsentDecline(ctx);
+    }
+    else if (data.startsWith('respond_')) {
       await handleOrderResponse(ctx, telegramId, data.replace('respond_', ''));
     }
     else if (data.startsWith('decline_')) {
@@ -307,6 +318,66 @@ async function handleCallbackQuery(ctx: BotContext) {
     console.error('Error in callback query handler:', error);
     await ctx.answerCbQuery('Произошла ошибка. Попробуйте позже.');
   }
+}
+
+/**
+ * Обработка принятия согласия на обработку ПД
+ */
+async function handleConsentAccept(ctx: BotContext, telegramId: string, botId: string) {
+  const firstName = ctx.from?.first_name;
+  const lastName = ctx.from?.last_name;
+  const username = ctx.from?.username;
+
+  try {
+    // Создаём контакт с датой согласия
+    await db.contact.upsert({
+      where: { telegramId_botId: { telegramId, botId } },
+      create: {
+        telegramId,
+        firstName: firstName || null,
+        lastName: lastName || null,
+        username: username || null,
+        botId,
+        status: 'NEW',
+        consentGivenAt: new Date(),
+      },
+      update: {
+        firstName: firstName || null,
+        lastName: lastName || null,
+        username: username || null,
+        consentGivenAt: new Date(),
+      },
+    });
+
+    // Обновляем счётчик подписчиков
+    const totalCount = await db.contact.count({ where: { botId } });
+    await db.bot.update({ where: { id: botId }, data: { subscriberCount: totalCount } });
+
+    await ctx.answerCbQuery('Согласие принято!');
+    await ctx.editMessageReplyMarkup(undefined);
+    await ctx.reply(
+      `✅ Спасибо! Ваше согласие принято.\n\n` +
+      `👋 Добро пожаловать, ${firstName || 'друг'}!\n` +
+      `Вы успешно зарегистрированы в системе.\n` +
+      `Ожидайте подтверждения от менеджера.`,
+      Markup.keyboard([['📋 Мои заказы', '👤 Профиль']]).resize()
+    );
+  } catch (error) {
+    console.error('Error in consent accept handler:', error);
+    await ctx.answerCbQuery('Ошибка. Попробуйте позже.');
+  }
+}
+
+/**
+ * Обработка отказа от согласия на обработку ПД
+ */
+async function handleConsentDecline(ctx: BotContext) {
+  await ctx.answerCbQuery('Вы отказались');
+  await ctx.editMessageReplyMarkup(undefined);
+  await ctx.reply(
+    `❌ Без согласия на обработку персональных данных регистрация невозможна.\n\n` +
+    `Если вы передумаете, отправьте команду /start.`
+  );
 }
 
 /**

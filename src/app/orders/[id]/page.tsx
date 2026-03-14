@@ -308,13 +308,26 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           title: "Оценка сохранена",
           description: "Рейтинг сотрудника обновлен",
         });
-        throw new Error("Failed");
+      } else {
+        toast({ title: "Ошибка", description: "Не удалось выставить оценку", variant: "destructive" });
       }
     } catch (error) {
       toast({ title: "Ошибка", description: "Не удалось выставить оценку", variant: "destructive" });
-    } finally {
-      setIsRatingDialogOpen(false);
-      setRatingResponseId(null);
+    }
+  };
+
+  const handleDeleteOrder = async () => {
+    if (!window.confirm("Вы уверены, что хотите удалить этот заказ? Это действие необратимо.")) return;
+    try {
+      const response = await fetch(`/api/orders/${resolvedParams.id}`, { method: "DELETE" });
+      if (response.ok) {
+        toast({ title: "Заказ удален" });
+        router.push("/orders");
+      } else {
+        toast({ title: "Ошибка удаления", description: "Не удалось удалить заказ", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка удаления", description: "Не удалось удалить заказ", variant: "destructive" });
     }
   };
 

@@ -8,11 +8,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { processScheduledPublications } from '@/bot/broadcast';
 import { processShiftReminders } from '@/lib/notifications';
 import { dequeue, QUEUES } from '@/lib/queue';
-import { PrismaClient } from '@prisma/client';
+import { ResponseStatus, OrderStatus } from '@prisma/client';
+import { db as prisma } from '@/lib/db';
 
 // Секретный ключ для защиты endpoint
 const CRON_SECRET = process.env.CRON_SECRET || 'cron-secret-key';
-const prisma = new PrismaClient();
 
 /**
  * Обработка cron запросов
@@ -122,9 +122,6 @@ async function processQueueMessage(message: unknown): Promise<void> {
         // Напоминание о смене
         const { sendShiftReminder } = await import('@/bot/broadcast');
         // Для напоминаний нужно найти всех назначенных сотрудников
-        const { PrismaClient, ResponseStatus } = await import('@prisma/client');
-        const prisma = new PrismaClient();
-        
         const order = await prisma.order.findUnique({
           where: { id: msg.payload.orderId as string },
           include: {
@@ -159,27 +156,24 @@ async function processQueueMessage(message: unknown): Promise<void> {
  * Очистка старых данных
  */
 async function cleanupOldData(): Promise<void> {
-  const { PrismaClient } = await import('@prisma/client');
-  const prisma = new PrismaClient();
-  
   // Удаляем старые отклоненные отклики (старше 30 дней)
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  
+
   await prisma.orderResponse.deleteMany({
     where: {
-      status: 'REJECTED',
+      status: ResponseStatus.REJECTED,
       respondedAt: { lt: thirtyDaysAgo }
     }
   });
-  
+
   // Удаляем старые отмененные заказы (старше 90 дней)
   const ninetyDaysAgo = new Date();
   ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-  
+
   await prisma.order.deleteMany({
     where: {
-      status: 'CANCELLED',
+      status: OrderStatus.CANCELLED,
       updatedAt: { lt: ninetyDaysAgo }
     }
   });
@@ -197,26 +191,26 @@ async function processAutocomplete(): Promise<{ processed: number; errors: strin
     
     const ordersInProgress = await prisma.order.findMany({
       where: {
-        status: 'IN_PROGRESS',
+        status: OrderStatus.IN_PROGRESS,
         workDate: { lt: twelveHoursAgo }
       },
       include: {
         responses: {
-          where: { status: { in: ['ASSIGNED', 'CHECKED_IN'] } }
+          where: { status: { in: [ResponseStatus.ASSIGNED, ResponseStatus.CHECKED_IN] } }
         }
       }
     });
-    
+
     for (const order of ordersInProgress) {
-      if (order.responses.length > 0 && order.responses.every(r => r.status === 'CHECKED_IN')) {
+      if (order.responses.length > 0 && order.responses.every(r => r.status === ResponseStatus.CHECKED_IN)) {
          // Автозавершаем
          await prisma.order.update({
            where: { id: order.id },
-           data: { status: 'COMPLETED' }
+           data: { status: OrderStatus.COMPLETED }
          });
          await prisma.orderResponse.updateMany({
-           where: { orderId: order.id, status: 'CHECKED_IN' },
-           data: { status: 'COMPLETED', completedAt: new Date(), reportText: 'Авто-завершено системой' }
+           where: { orderId: order.id, status: ResponseStatus.CHECKED_IN },
+           data: { status: ResponseStatus.COMPLETED, completedAt: new Date(), reportText: 'Авто-завершено системой' }
          });
          processed++;
       }
