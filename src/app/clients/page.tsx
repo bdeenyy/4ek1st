@@ -156,7 +156,9 @@ export default function ClientsPage() {
   if (status === "loading") return <div className="p-6">Загрузка...</div>;
 
   return (
-    <div className="p-6 space-y-6">
+    <>
+      <Header title="Клиенты" />
+      <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Клиенты</h1>
@@ -338,5 +340,6 @@ export default function ClientsPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </>
   );
 }

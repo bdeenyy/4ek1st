@@ -14,7 +14,8 @@ const prisma = new PrismaClient();
 const REMINDER_BEFORE_MINUTES = 60;
 
 /**
- * Вспомогательная функция: отправка сообщения менеджеру через его бот
+ * Вспомогательная функция: отправка сообщения менеджеру через его бот.
+ * Приоритет: bot.telegramManagerId (явно заданный) → первый контакт бота в БД
  */
 async function sendMessageToManager(
   managerId: string,
@@ -22,15 +23,21 @@ async function sendMessageToManager(
   botId: string,
   message: string
 ): Promise<void> {
-  // Находим Telegram контакт менеджера (если он зарегистрирован в боте)
-  const managerContact = await prisma.contact.findFirst({
-    where: { botId }
-  });
+  // 1. Проверяем явно назначенный Telegram ID менеджера в настройках бота
+  const botRecord = await prisma.bot.findUnique({ where: { id: botId } });
+  const managerTelegramId = (botRecord as any)?.telegramManagerId;
+
+  if (managerTelegramId) {
+    const bot = getBot(botId) ?? createBot(botToken, botId);
+    await bot.telegram.sendMessage(managerTelegramId, message, { parse_mode: 'Markdown' });
+    return;
+  }
+
+  // 2. Fallback: ищем любой Contact в боте (старая логика)
+  const managerContact = await prisma.contact.findFirst({ where: { botId } });
 
   if (!managerContact?.telegramId) {
-    // Если менеджер не найден как контакт бота, отправляем всем APPROVED контактам с правами
-    // Для MVP: логируем что менеджер не настроил telegramId
-    console.log(`[Notification] Manager ${managerId} has no Telegram contact in bot ${botId}. Message: ${message}`);
+    console.log('[Notification] No telegramManagerId in bot ' + botId + '. Set it in bot settings. Msg: ' + message);
     return;
   }
 
