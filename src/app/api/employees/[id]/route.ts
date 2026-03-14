@@ -115,19 +115,24 @@ export async function DELETE(
   try {
     const { id } = await params;
     
-    // Удаляем связи с тегами
-    await db.$executeRaw`DELETE FROM _EmployeeTags WHERE A = ${id}`;
-    
+    // Удаляем связи с тегами (таблица создана с кавычками — "_EmployeeTags", PG case-sensitive)
+    await db.$executeRaw`DELETE FROM "_EmployeeTags" WHERE "A" = ${id}`;
+
+    // Удаляем историю баланса
+    await db.balanceHistory.deleteMany({
+      where: { employeeId: id },
+    });
+
     // Удаляем отклики
     await db.orderResponse.deleteMany({
       where: { employeeId: id },
     });
-    
+
     // Удаляем финансовые записи
     await db.financialRecord.deleteMany({
       where: { employeeId: id },
     });
-    
+
     // Удаляем историю работ
     await db.workHistory.deleteMany({
       where: { employeeId: id },

@@ -97,6 +97,7 @@ export async function POST(request: Request) {
       publishType,
       botId,
       creatorId,
+      templateId,
     } = body;
 
     const order = await db.order.create({
@@ -120,6 +121,7 @@ export async function POST(request: Request) {
         paymentStatus: "NOT_PAID",
         botId,
         creatorId,
+        templateId: templateId || null,
       },
     });
 

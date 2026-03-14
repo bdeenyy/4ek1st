@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,11 +14,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, MoreHorizontal, Eye, Edit, CalendarIcon, CheckCircle, XCircle, Clock, Phone, Send, Trash2 } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Eye, Edit, CalendarIcon, CheckCircle, XCircle, Clock, Phone, Send, Trash2, ChevronsUpDown } from "lucide-react";
 
 const orderStatusConfig: Record<string, { label: string; color: string }> = {
   DRAFT: { label: "Черновик", color: "bg-gray-500" },
@@ -42,11 +43,18 @@ function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
 }
 
-export default function OrdersPage() {
+function OrdersPageInner() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
-  
+
+  const resetNewOrder = () => ({
+    title: "", description: "", clientName: "", clientPhone: "", district: "", street: "",
+    houseNumber: "", officeNumber: "", workDate: new Date(), workTime: "09:00", workType: "",
+    requiredPeople: 1, pricePerPerson: 0, botId: "", templateId: "",
+  });
+
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -54,11 +62,12 @@ export default function OrdersPage() {
   const [cityFilter, setCityFilter] = useState("all");
   const [bots, setBots] = useState<any[]>([]);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [newOrder, setNewOrder] = useState({
-    title: "", description: "", clientName: "", clientPhone: "", district: "", street: "",
-    houseNumber: "", officeNumber: "", workDate: new Date(), workTime: "09:00", workType: "",
-    requiredPeople: 1, pricePerPerson: 0, botId: "",
-  });
+  const [newOrder, setNewOrder] = useState(resetNewOrder());
+
+  // CRM client autocomplete state
+  const [clients, setClients] = useState<any[]>([]);
+  const [clientSearch, setClientSearch] = useState("");
+  const [clientComboOpen, setClientComboOpen] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
@@ -67,6 +76,39 @@ export default function OrdersPage() {
   useEffect(() => {
     if (status === "authenticated") { fetchOrders(); fetchBots(); }
   }, [status]);
+
+  // Автозаполнение формы при переходе с ?templateId=...
+  useEffect(() => {
+    const templateId = searchParams.get("templateId");
+    if (!templateId) return;
+    fetch(`/api/orders/templates/${templateId}`)
+      .then((res) => res.json())
+      .then((template) => {
+        setNewOrder((prev) => ({
+          ...prev,
+          title: template.name ?? "",
+          workType: template.workType ?? "",
+          requiredPeople: template.requiredPeople ?? 1,
+          description: template.description ?? "",
+          templateId: template.id,
+        }));
+        setIsCreateDialogOpen(true);
+      })
+      .catch(console.error);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // Debounced CRM client search
+  useEffect(() => {
+    if (clientSearch.length < 1) { setClients([]); return; }
+    const timer = setTimeout(() => {
+      fetch(`/api/clients?query=${encodeURIComponent(clientSearch)}`)
+        .then((res) => res.json())
+        .then(setClients)
+        .catch(() => setClients([]));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [clientSearch]);
 
   const fetchOrders = async () => {
     try {
@@ -97,9 +139,10 @@ export default function OrdersPage() {
         const createdOrder = await response.json();
         setOrders([createdOrder, ...orders]);
         setIsCreateDialogOpen(false);
-        setNewOrder({ title: "", description: "", clientName: "", clientPhone: "", district: "", street: "",
-          houseNumber: "", officeNumber: "", workDate: new Date(), workTime: "09:00", workType: "",
-          requiredPeople: 1, pricePerPerson: 0, botId: "" });
+        setNewOrder(resetNewOrder());
+        setClientSearch("");
+        setClients([]);
+        setClientComboOpen(false);
         toast({ title: "Заказ создан", description: "Новый заказ успешно создан" });
       }
     } catch (error) {
@@ -188,6 +231,58 @@ export default function OrdersPage() {
                 <Label htmlFor="description">Описание</Label>
                 <Textarea id="description" placeholder="Детальное описание работ..." value={newOrder.description}
                   onChange={(e) => setNewOrder({...newOrder, description: e.target.value})} />
+              </div>
+              {/* CRM autocomplete */}
+              <div className="space-y-2">
+                <Label>Выбрать из CRM <span className="text-muted-foreground font-normal">(необязательно)</span></Label>
+                <Popover open={clientComboOpen} onOpenChange={setClientComboOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-between font-normal">
+                      {clientSearch || "Найти клиента по названию, ИНН, телефону..."}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="p-0 w-full min-w-[400px]">
+                    <Command shouldFilter={false}>
+                      <CommandInput
+                        placeholder="Поиск клиента..."
+                        value={clientSearch}
+                        onValueChange={setClientSearch}
+                      />
+                      <CommandList>
+                        <CommandEmpty>Клиент не найден</CommandEmpty>
+                        <CommandGroup>
+                          {clients.map((client) => (
+                            <CommandItem
+                              key={client.id}
+                              value={client.id}
+                              onSelect={() => {
+                                setNewOrder((prev) => ({
+                                  ...prev,
+                                  clientName: client.contactPerson || client.name,
+                                  clientPhone: client.phone || "",
+                                }));
+                                setClientComboOpen(false);
+                                setClientSearch("");
+                                setClients([]);
+                              }}
+                            >
+                              <div className="flex flex-col">
+                                <span className="font-medium">{client.name}</span>
+                                {client.contactPerson && (
+                                  <span className="text-xs text-muted-foreground">{client.contactPerson}</span>
+                                )}
+                                {client.phone && (
+                                  <span className="text-xs text-muted-foreground">{client.phone}</span>
+                                )}
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -415,5 +510,13 @@ export default function OrdersPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function OrdersPage() {
+  return (
+    <Suspense fallback={<div className="p-6">Загрузка...</div>}>
+      <OrdersPageInner />
+    </Suspense>
   );
 }
