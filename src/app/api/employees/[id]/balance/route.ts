@@ -5,21 +5,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth-options';
 import { db as prisma } from '@/lib/db';
-import { BalanceOperationType, EmployeeStatus } from '@prisma/client';
+import { BalanceOperationType } from '@prisma/client';
 
-// Порог надёжности для автобана (в процентах)
-const AUTO_BAN_RELIABILITY_THRESHOLD = 40;
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
   const { id } = await params;
 
   try {
@@ -46,9 +39,6 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
   const { id } = await params;
 
   try {
