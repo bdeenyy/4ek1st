@@ -64,23 +64,42 @@ model Employee {
   phone2       String?
   telegramId   String?
   rating       Float    @default(0)
+  balance      Float    @default(0)  // Бонусный баланс (+ бонусы, - штрафы)
   status       EmployeeStatus @default(AVAILABLE)
   avatar       String?
   notes        String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-  
+
   tags         EmployeeTag[] @relation("EmployeeTags")
   orderResponses OrderResponse[]
   workHistory  WorkHistory[]
   financialRecords FinancialRecord[]
   payments     Payment[]
+  balanceHistory BalanceHistory[]
 }
 
 enum EmployeeStatus {
   AVAILABLE   // Свободен
   WORKING     // В работе
   BANNED      // Забанен
+}
+
+// История операций с балансом сотрудника
+model BalanceHistory {
+  id          String   @id @default(cuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  amount      Float                 // Положительное = бонус, отрицательное = штраф
+  type        BalanceOperationType
+  description String?
+  createdAt   DateTime @default(now())
+}
+
+enum BalanceOperationType {
+  BONUS     // Бонус
+  PENALTY   // Штраф
+  MANUAL    // Ручная корректировка
 }
 
 // Теги для сотрудников
@@ -207,20 +226,35 @@ enum ResponseStatus {
 // Контакты (пользователи ботов)
 // Составной ключ: один человек может работать в нескольких городах (ботах)
 model Contact {
-  id           String   @id @default(cuid())
-  telegramId   String
-  firstName    String?
-  lastName     String?
-  username     String?
-  phone        String?
-  status       ContactStatus @default(NEW)
-  botId        String
-  bot          Bot      @relation(fields: [botId], references: [id])
-  registeredAt DateTime @default(now())
-  approvedAt   DateTime?
-  notes        String?
+  id              String   @id @default(cuid())
+  telegramId      String
+  firstName       String?
+  lastName        String?
+  username        String?
+  phone           String?
+  status          ContactStatus @default(NEW)
+  botId           String
+  bot             Bot      @relation(fields: [botId], references: [id])
+  registeredAt    DateTime @default(now())
+  approvedAt      DateTime?
+  notes           String?
+  consentGivenAt  DateTime?  // Дата принятия согласия на обработку ПД (152-ФЗ)
 
   @@unique([telegramId, botId])
+}
+
+// Клиенты (заказчики — юр. и физ. лица)
+model Client {
+  id            String   @id @default(cuid())
+  name          String                  // Название компании или ФИО
+  inn           String?                 // ИНН
+  contactPerson String?                 // Контактное лицо
+  phone         String?
+  email         String?
+  address       String?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 enum ContactStatus {

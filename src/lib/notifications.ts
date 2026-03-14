@@ -14,6 +14,31 @@ const prisma = new PrismaClient();
 const REMINDER_BEFORE_MINUTES = 60;
 
 /**
+ * Вспомогательная функция: отправка сообщения менеджеру через его бот
+ */
+async function sendMessageToManager(
+  managerId: string,
+  botToken: string,
+  botId: string,
+  message: string
+): Promise<void> {
+  // Находим Telegram контакт менеджера (если он зарегистрирован в боте)
+  const managerContact = await prisma.contact.findFirst({
+    where: { botId }
+  });
+
+  if (!managerContact?.telegramId) {
+    // Если менеджер не найден как контакт бота, отправляем всем APPROVED контактам с правами
+    // Для MVP: логируем что менеджер не настроил telegramId
+    console.log(`[Notification] Manager ${managerId} has no Telegram contact in bot ${botId}. Message: ${message}`);
+    return;
+  }
+
+  const bot = getBot(botId) ?? createBot(botToken, botId);
+  await bot.telegram.sendMessage(managerContact.telegramId, message, { parse_mode: 'Markdown' });
+}
+
+/**
  * Отправка уведомления менеджеру о новом отклике
  */
 export async function notifyManagerAboutResponse(
@@ -23,27 +48,27 @@ export async function notifyManagerAboutResponse(
   try {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: { 
-        bot: true,
-        creator: true 
-      }
+      include: { bot: true, creator: true }
     });
-    
-    const employee = await prisma.employee.findUnique({
-      where: { id: employeeId }
-    });
-    
+    const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
+
     if (!order || !employee || !order.bot) {
       return { success: false, error: 'Order, employee or bot not found' };
     }
-    
-    // Получаем менеджера (создателя заказа)
-    const manager = order.creator;
-    
-    console.log(`[Notification] New response for order ${order.title} from ${employee.firstName} ${employee.lastName}`);
-    
+
+    const message = `
+🔔 *Новый отклик на заказ!*
+
+📋 *Заказ:* ${order.title}
+👤 *Сотрудник:* ${employee.firstName} ${employee.lastName}
+📞 *Телефон:* ${employee.phone}
+${employee.rating > 0 ? `⭐ *Рейтинг:* ${employee.rating.toFixed(1)}` : ''}
+
+Войдите в панель управления для назначения сотрудника.
+    `.trim();
+
+    await sendMessageToManager(order.creatorId, order.bot.token, order.botId, message);
     return { success: true };
-    
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return { success: false, error: errorMessage };
@@ -60,12 +85,24 @@ export async function notifyManagerCheckin(
   try {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: { creator: true }
+      include: { bot: true, creator: true }
     });
     const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
-    if (!order || !employee) return { success: false, error: 'Not found' };
-    
-    console.log(`[Notification] Employee ${employee.firstName} ${employee.lastName} CHECKED IN for order ${order.title}`);
+
+    if (!order || !employee || !order.bot) {
+      return { success: false, error: 'Not found' };
+    }
+
+    const timeStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    const message = `
+✅ *Сотрудник прибыл на место!*
+
+📋 *Заказ:* ${order.title}
+👤 *Сотрудник:* ${employee.firstName} ${employee.lastName}
+🕐 *Время чек-ина:* ${timeStr}
+    `.trim();
+
+    await sendMessageToManager(order.creatorId, order.bot.token, order.botId, message);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
@@ -82,12 +119,26 @@ export async function notifyManagerCompletion(
   try {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: { creator: true }
+      include: { bot: true, creator: true }
     });
     const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
-    if (!order || !employee) return { success: false, error: 'Not found' };
-    
-    console.log(`[Notification] Employee ${employee.firstName} ${employee.lastName} COMPLETED work for order ${order.title}`);
+
+    if (!order || !employee || !order.bot) {
+      return { success: false, error: 'Not found' };
+    }
+
+    const timeStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    const message = `
+🏁 *Сотрудник завершил работу!*
+
+📋 *Заказ:* ${order.title}
+👤 *Сотрудник:* ${employee.firstName} ${employee.lastName}
+🕐 *Время завершения:* ${timeStr}
+
+Войдите в панель управления для оценки работы.
+    `.trim();
+
+    await sendMessageToManager(order.creatorId, order.bot.token, order.botId, message);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
@@ -104,12 +155,25 @@ export async function notifyManagerCancelledByEmployee(
   try {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: { creator: true }
+      include: { bot: true, creator: true }
     });
     const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
-    if (!order || !employee) return { success: false, error: 'Not found' };
-    
-    console.log(`[Notification] ⚠️ Employee ${employee.firstName} ${employee.lastName} CANCELLED assignment for order ${order.title}`);
+
+    if (!order || !employee || !order.bot) {
+      return { success: false, error: 'Not found' };
+    }
+
+    const message = `
+⚠️ *Сотрудник отказался от смены!*
+
+📋 *Заказ:* ${order.title}
+👤 *Сотрудник:* ${employee.firstName} ${employee.lastName}
+📞 *Телефон:* ${employee.phone}
+
+Необходимо найти замену. Войдите в панель управления.
+    `.trim();
+
+    await sendMessageToManager(order.creatorId, order.bot.token, order.botId, message);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
