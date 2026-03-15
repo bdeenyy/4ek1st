@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { emitOrderUpdate } from "@/lib/socket-helper";
+import { closeOrderBroadcast } from "@/bot/broadcast";
 
 export async function GET(
   request: NextRequest,
@@ -80,8 +81,13 @@ export async function PATCH(
       where: { id },
       data: updateData,
     });
-    
+
     emitOrderUpdate(id);
+
+    // Если заказ отменяется — закрываем рассылку у всех сотрудников
+    if (body.status === 'CANCELLED') {
+      closeOrderBroadcast(id, 'CANCELLED').catch(console.error);
+    }
 
     return NextResponse.json(order);
   } catch (error) {
@@ -100,9 +106,10 @@ export async function DELETE(
   try {
     const { id } = await params;
     
-    // Уведомляем всех откликнувшихся об отмене
+    // Уведомляем всех откликнувшихся об отмене и закрываем рассылку
     const { notifyOrderCancelled } = await import("@/lib/notifications");
     await notifyOrderCancelled(id, "Заказ удален");
+    await closeOrderBroadcast(id, 'CANCELLED');
 
     // Удаляем связанные отклики
     await db.orderResponse.deleteMany({

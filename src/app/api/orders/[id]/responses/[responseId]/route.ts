@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { emitOrderUpdate } from "@/lib/socket-helper";
+import { closeOrderBroadcast } from "@/bot/broadcast";
 
 export async function PATCH(
   request: NextRequest,
@@ -48,6 +49,18 @@ export async function PATCH(
         await notifyEmployeeAssigned(id, response.employeeId);
       } catch (notifyError) {
         console.error("Failed to send assignment notification:", notifyError);
+      }
+
+      // Проверяем, заполнены ли все места — если да, закрываем рассылку
+      const order = response.order;
+      const assignedCount = await db.orderResponse.count({
+        where: {
+          orderId: id,
+          status: { in: ['ASSIGNED', 'CHECKED_IN', 'COMPLETED'] }
+        }
+      });
+      if (assignedCount >= order.requiredPeople) {
+        closeOrderBroadcast(id, 'FILLED').catch(console.error);
       }
     }
 

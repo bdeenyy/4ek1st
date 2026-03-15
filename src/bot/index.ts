@@ -8,12 +8,15 @@ import fs from 'fs';
 import path from 'path';
 import { db } from '@/lib/db';
 import { emitOrderUpdate } from '@/lib/socket-helper';
-import { 
+import {
   notifyManagerAboutResponse,
   notifyManagerCancelledByEmployee,
   notifyManagerCheckin,
-  notifyManagerCompletion
+  notifyManagerCompletion,
+  notifyEmployeeAssigned,
+  notifyEmployeeRejected
 } from '@/lib/notifications';
+import { closeOrderBroadcast } from './broadcast';
 
 // Типы для бота
 interface BotContext extends Context {
@@ -202,7 +205,13 @@ async function handleMessage(ctx: BotContext) {
   // Если это клик по клавиатуре
   if ('text' in ctx.message) {
     if (ctx.message.text === '📋 Мои заказы') return handleMyOrders(ctx);
-    if (ctx.message.text === '👤 Профиль') return ctx.reply('Ваш профиль скоро появится :)');
+    if (ctx.message.text === '👤 Профиль') return handleProfile(ctx);
+    if (ctx.message.text === '⏭ Пропустить') {
+      return ctx.reply(
+        'Хорошо, вы можете добавить номер позже через кнопку «👤 Профиль».',
+        Markup.keyboard([['📋 Мои заказы', '👤 Профиль']]).resize()
+      );
+    }
   }
 
   // Найти заказ, где работник CHECKED_IN
@@ -307,6 +316,24 @@ async function handleCallbackQuery(ctx: BotContext) {
     else if (data.startsWith('confirm_')) {
       await handleWorkConfirm(ctx, telegramId, data.replace('confirm_', ''));
     }
+    else if (data === 'update_phone') {
+      await ctx.answerCbQuery();
+      await ctx.reply(
+        '📱 Нажмите кнопку ниже, чтобы поделиться номером телефона:',
+        {
+          ...Markup.keyboard([
+            [Markup.button.contactRequest('📱 Поделиться номером телефона')],
+            ['⏭ Пропустить']
+          ]).oneTime().resize()
+        }
+      );
+    }
+    else if (data.startsWith('assign_')) {
+      await handleManagerAssign(ctx, data.replace('assign_', ''));
+    }
+    else if (data.startsWith('reject_')) {
+      await handleManagerReject(ctx, data.replace('reject_', ''));
+    }
     else if (data.startsWith('rate_')) {
       // rate_{orderId}_{employeeId}_{score}
       const parts = data.split('_');
@@ -359,8 +386,20 @@ async function handleConsentAccept(ctx: BotContext, telegramId: string, botId: s
       `✅ Спасибо! Ваше согласие принято.\n\n` +
       `👋 Добро пожаловать, ${firstName || 'друг'}!\n` +
       `Вы успешно зарегистрированы в системе.\n` +
-      `Ожидайте подтверждения от менеджера.`,
-      Markup.keyboard([['📋 Мои заказы', '👤 Профиль']]).resize()
+      `Ожидайте подтверждения от менеджера.`
+    );
+    // Запрашиваем номер телефона через стандартный механизм Telegram
+    await ctx.reply(
+      `📱 *Для работы в системе нужен ваш номер телефона.*\n\n` +
+      `Нажмите кнопку ниже — Telegram автоматически отправит ваш номер.\n` +
+      `Он используется только для связи с менеджером.`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.keyboard([
+          [Markup.button.contactRequest('📱 Поделиться номером телефона')],
+          ['⏭ Пропустить']
+        ]).oneTime().resize()
+      }
     );
   } catch (error) {
     console.error('Error in consent accept handler:', error);
@@ -385,25 +424,76 @@ async function handleConsentDecline(ctx: BotContext) {
  */
 async function handleOrderResponse(ctx: BotContext, telegramId: string, orderId: string) {
   if (!ctx.botId) return;
-  
+
   const contact = await db.contact.findUnique({
     where: { telegramId_botId: { telegramId, botId: ctx.botId } }
   });
-  
+
   if (!contact) {
     return ctx.answerCbQuery('Вы не зарегистрированы. Отправьте /start');
   }
-  
+
+  // Проверяем наличие телефона — он нужен менеджеру для связи
+  if (!contact.phone) {
+    await ctx.answerCbQuery('Нужен номер телефона!');
+    return ctx.reply(
+      '📱 *Для отклика на заказ необходим ваш номер телефона.*\n' +
+      'Менеджер использует его для связи с вами.\n\n' +
+      'Нажмите кнопку ниже:',
+      {
+        parse_mode: 'Markdown',
+        ...Markup.keyboard([
+          [Markup.button.contactRequest('📱 Поделиться номером телефона')],
+          ['⏭ Пропустить']
+        ]).oneTime().resize()
+      }
+    );
+  }
+
+  // Получаем заказ для проверки статуса и заполненности
+  const order = await db.order.findUnique({
+    where: { id: orderId },
+    select: { id: true, status: true, requiredPeople: true }
+  });
+
+  if (!order) {
+    return ctx.answerCbQuery('Заказ не найден');
+  }
+
+  // Проверяем, что заказ ещё принимает отклики
+  if (order.status === 'CANCELLED') {
+    await ctx.editMessageReplyMarkup(undefined);
+    return ctx.answerCbQuery('❌ Заказ отменён');
+  }
+  if (order.status === 'COMPLETED') {
+    await ctx.editMessageReplyMarkup(undefined);
+    return ctx.answerCbQuery('Заказ уже завершён');
+  }
+
+  // Считаем сколько мест уже занято (ASSIGNED + CHECKED_IN + COMPLETED)
+  const filledCount = await db.orderResponse.count({
+    where: {
+      orderId,
+      status: { in: ['ASSIGNED', 'CHECKED_IN', 'COMPLETED'] }
+    }
+  });
+
+  if (filledCount >= order.requiredPeople) {
+    // Все места заняты — убираем кнопки из сообщения
+    await ctx.editMessageReplyMarkup(undefined);
+    return ctx.answerCbQuery('😔 Все места уже заняты');
+  }
+
   const existingResponse = await db.orderResponse.findFirst({
     where: { orderId, employee: { telegramId } }
   });
-  
+
   if (existingResponse) {
     return ctx.answerCbQuery('Вы уже откликнулись на этот заказ');
   }
-  
+
   let employee = await db.employee.findFirst({ where: { telegramId } });
-  
+
   if (!employee) {
     employee = await db.employee.create({
       data: {
@@ -415,7 +505,7 @@ async function handleOrderResponse(ctx: BotContext, telegramId: string, orderId:
       }
     });
   }
-  
+
   await db.orderResponse.create({
     data: {
       orderId,
@@ -423,7 +513,7 @@ async function handleOrderResponse(ctx: BotContext, telegramId: string, orderId:
       status: 'PENDING'
     }
   });
-  
+
   // Уведомляем менеджера о новом отклике
   await notifyManagerAboutResponse(orderId, employee.id);
   emitOrderUpdate(orderId);
@@ -593,6 +683,96 @@ async function handleWorkConfirm(ctx: BotContext, telegramId: string, orderId: s
 }
 
 /**
+ * Менеджер нажал «✅ Назначить» в уведомлении об отклике
+ */
+async function handleManagerAssign(ctx: BotContext, responseId: string) {
+  await ctx.answerCbQuery();
+
+  const response = await db.orderResponse.findUnique({
+    where: { id: responseId },
+    include: { order: { include: { bot: true } }, employee: true }
+  });
+
+  if (!response) {
+    return ctx.editMessageText('❌ Отклик не найден или уже удалён.');
+  }
+
+  if (response.status !== 'PENDING') {
+    const label = response.status === 'ASSIGNED' ? 'уже назначен' : 'отклонён/завершён';
+    return ctx.editMessageText(`ℹ️ Сотрудник ${label}.`);
+  }
+
+  // Проверяем, есть ли ещё свободные места
+  const filledCount = await db.orderResponse.count({
+    where: {
+      orderId: response.orderId,
+      status: { in: ['ASSIGNED', 'CHECKED_IN', 'COMPLETED'] }
+    }
+  });
+
+  if (filledCount >= response.order.requiredPeople) {
+    return ctx.editMessageText('❌ Все места уже заняты — назначение невозможно.');
+  }
+
+  await db.orderResponse.update({
+    where: { id: responseId },
+    data: { status: 'ASSIGNED', assignedAt: new Date() }
+  });
+
+  // Уведомляем сотрудника
+  await notifyEmployeeAssigned(response.orderId, response.employeeId);
+
+  // Проверяем, заполнен ли заказ
+  const newFilledCount = filledCount + 1;
+  if (newFilledCount >= response.order.requiredPeople) {
+    await closeOrderBroadcast(response.orderId, 'FILLED');
+  }
+
+  emitOrderUpdate(response.orderId);
+
+  const name = `${response.employee.firstName} ${response.employee.lastName}`.trim();
+  await ctx.editMessageText(
+    `✅ *${name}* назначен на заказ «${response.order.title}».\nСотруднику отправлено уведомление.`,
+    { parse_mode: 'Markdown' }
+  );
+}
+
+/**
+ * Менеджер нажал «❌ Отклонить» в уведомлении об отклике
+ */
+async function handleManagerReject(ctx: BotContext, responseId: string) {
+  await ctx.answerCbQuery();
+
+  const response = await db.orderResponse.findUnique({
+    where: { id: responseId },
+    include: { order: true, employee: true }
+  });
+
+  if (!response) {
+    return ctx.editMessageText('❌ Отклик не найден или уже удалён.');
+  }
+
+  if (response.status !== 'PENDING') {
+    const label = response.status === 'ASSIGNED' ? 'уже назначен' : 'отклонён/завершён';
+    return ctx.editMessageText(`ℹ️ Сотрудник ${label}.`);
+  }
+
+  await db.orderResponse.update({
+    where: { id: responseId },
+    data: { status: 'REJECTED' }
+  });
+
+  await notifyEmployeeRejected(response.orderId, response.employeeId);
+  emitOrderUpdate(response.orderId);
+
+  const name = `${response.employee.firstName} ${response.employee.lastName}`.trim();
+  await ctx.editMessageText(
+    `❌ Отклик *${name}* отклонён. Сотруднику отправлено уведомление.`,
+    { parse_mode: 'Markdown' }
+  );
+}
+
+/**
  * Обработка оценки от менеджера (через бота менеджера)
  */
 async function handleRating(ctx: BotContext, orderId: string, employeeId: string, score: number) {
@@ -632,6 +812,108 @@ async function handleRating(ctx: BotContext, orderId: string, employeeId: string
 }
 
 /**
+ * Обработка входящего контакта (поделился номером телефона)
+ */
+async function handleContact(ctx: BotContext) {
+  const telegramId = ctx.from?.id.toString();
+  if (!telegramId || !ctx.botId) return;
+
+  if (!ctx.message || !('contact' in ctx.message)) return;
+  const contact = ctx.message.contact;
+
+  // Telegram может прислать чужой контакт — принимаем только свой номер
+  if (contact.user_id?.toString() !== telegramId) {
+    return ctx.reply('Пожалуйста, поделитесь своим номером телефона.', {
+      ...Markup.keyboard([
+        [Markup.button.contactRequest('📱 Поделиться номером телефона')],
+        ['⏭ Пропустить']
+      ]).oneTime().resize()
+    });
+  }
+
+  const phone = contact.phone_number.replace(/[^\d+]/g, '');
+
+  // Сохраняем в Contact
+  await db.contact.update({
+    where: { telegramId_botId: { telegramId, botId: ctx.botId } },
+    data: { phone }
+  });
+
+  // Обновляем Employee если уже создан
+  const employee = await db.employee.findFirst({ where: { telegramId } });
+  if (employee) {
+    await db.employee.update({
+      where: { id: employee.id },
+      data: { phone }
+    });
+  }
+
+  await ctx.reply(
+    `✅ Номер телефона *${phone}* сохранён!\n\nТеперь всё готово.`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.keyboard([['📋 Мои заказы', '👤 Профиль']]).resize()
+    }
+  );
+}
+
+/**
+ * Отображение профиля сотрудника
+ */
+async function handleProfile(ctx: BotContext) {
+  const telegramId = ctx.from?.id.toString();
+  if (!telegramId || !ctx.botId) return;
+
+  const contact = await db.contact.findUnique({
+    where: { telegramId_botId: { telegramId, botId: ctx.botId } }
+  });
+
+  if (!contact) {
+    return ctx.reply('Вы не зарегистрированы. Отправьте /start');
+  }
+
+  const employee = await db.employee.findFirst({ where: { telegramId } });
+
+  const name = [contact.firstName, contact.lastName].filter(Boolean).join(' ') || 'Не указано';
+  const username = contact.username ? `@${contact.username}` : 'Не указан';
+  const phone = contact.phone || null;
+
+  const statusMap: Record<string, string> = {
+    NEW: '🕐 Ожидает подтверждения',
+    APPROVED: '✅ Одобрен',
+    BANNED: '🚫 Заблокирован',
+  };
+  const statusText = statusMap[contact.status] ?? contact.status;
+
+  const registeredAt = contact.registeredAt.toLocaleDateString('ru-RU', {
+    day: 'numeric', month: 'long', year: 'numeric'
+  });
+
+  let profileText = `👤 *Ваш профиль*\n\n`;
+  profileText += `📛 *Имя:* ${name}\n`;
+  profileText += `📱 *Телефон:* ${phone ? phone : '❌ Не указан'}\n`;
+  profileText += `🔗 *Username:* ${username}\n`;
+  profileText += `📊 *Статус:* ${statusText}\n`;
+  profileText += `📅 *В системе с:* ${registeredAt}\n`;
+
+  if (employee) {
+    const workCount = await db.workHistory.count({ where: { employeeId: employee.id } });
+    if (workCount > 0) {
+      const ratingStr = employee.rating > 0
+        ? `⭐ ${employee.rating.toFixed(1)} (${workCount} работ)`
+        : `${workCount} работ, рейтинг ещё не выставлен`;
+      profileText += `\n📈 *Статистика:* ${ratingStr}\n`;
+    }
+  }
+
+  const keyboard = phone
+    ? Markup.inlineKeyboard([[Markup.button.callback('📱 Обновить номер', 'update_phone')]])
+    : Markup.inlineKeyboard([[Markup.button.callback('📱 Добавить номер телефона', 'update_phone')]]);
+
+  await ctx.reply(profileText, { parse_mode: 'Markdown', ...keyboard });
+}
+
+/**
  * Создание экземпляра бота
  */
 export function createBot(token: string, botId: string): Telegraf<BotContext> {
@@ -644,6 +926,8 @@ export function createBot(token: string, botId: string): Telegraf<BotContext> {
   
   bot.command('start', handleStart);
   bot.command('help', handleHelp);
+  // contact должен быть до общего message, иначе туда попадёт
+  bot.on('contact', handleContact);
   bot.on('message', handleMessage);
   bot.on('callback_query', handleCallbackQuery);
   

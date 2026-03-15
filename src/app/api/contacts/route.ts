@@ -36,7 +36,7 @@ export async function PATCH(request: Request) {
     // Получаем текущий контакт для определения изменений
     const currentContact = await db.contact.findUnique({
       where: { id },
-      select: { status: true, botId: true }
+      select: { status: true, botId: true, telegramId: true, firstName: true, lastName: true, phone: true }
     });
 
     if (!currentContact) {
@@ -53,18 +53,34 @@ export async function PATCH(request: Request) {
     });
 
     // Обновляем счётчик подписчиков бота
-    // Пересчитываем общее количество контактов для бота
     if (currentContact.status !== status) {
-      const totalCount = await db.contact.count({
-        where: {
-          botId: contact.botId,
-        }
+      const totalCount = await db.contact.count({ where: { botId: contact.botId } });
+      await db.bot.update({ where: { id: contact.botId }, data: { subscriberCount: totalCount } });
+    }
+
+    // При одобрении — создаём Employee если ещё не существует
+    if (status === 'APPROVED' && currentContact.telegramId) {
+      const existing = await db.employee.findFirst({
+        where: { telegramId: currentContact.telegramId }
       });
 
-      await db.bot.update({
-        where: { id: contact.botId },
-        data: { subscriberCount: totalCount }
-      });
+      if (!existing) {
+        await db.employee.create({
+          data: {
+            firstName: currentContact.firstName || 'Неизвестно',
+            lastName: currentContact.lastName || '',
+            phone: currentContact.phone || '',
+            telegramId: currentContact.telegramId,
+            status: 'AVAILABLE'
+          }
+        });
+      } else if (currentContact.phone && !existing.phone) {
+        // Если телефон появился в контакте, но не был у сотрудника — синхронизируем
+        await db.employee.update({
+          where: { id: existing.id },
+          data: { phone: currentContact.phone }
+        });
+      }
     }
 
     return NextResponse.json(contact);
