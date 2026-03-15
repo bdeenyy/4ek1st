@@ -440,6 +440,13 @@ async function handleOrderResponse(ctx: BotContext, telegramId: string, orderId:
     return ctx.answerCbQuery('Вы не зарегистрированы. Отправьте /start');
   }
 
+  if (contact.status === 'NEW') {
+    return ctx.answerCbQuery('⏳ Ваша заявка на рассмотрении. Дождитесь одобрения менеджером.');
+  }
+  if (contact.status === 'BANNED') {
+    return ctx.answerCbQuery('🚫 Ваш аккаунт заблокирован.');
+  }
+
   // Проверяем наличие телефона — он нужен менеджеру для связи
   if (!contact.phone) {
     await ctx.answerCbQuery('Нужен номер телефона!');

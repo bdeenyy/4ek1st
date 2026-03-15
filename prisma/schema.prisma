@@ -153,6 +153,7 @@ model Order {
   workType        String
   requiredPeople  Int      @default(1)
   pricePerPerson  Float
+  clientPrice     Float    @default(0)  // цена заказа для клиента (выручка)
   checklists      String?  // JSON array
   
   // Рассылка

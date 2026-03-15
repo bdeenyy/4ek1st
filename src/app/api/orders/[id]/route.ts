@@ -75,6 +75,7 @@ export async function PATCH(
     if (body.workType) updateData.workType = body.workType;
     if (body.requiredPeople) updateData.requiredPeople = body.requiredPeople;
     if (body.pricePerPerson) updateData.pricePerPerson = body.pricePerPerson;
+    if (body.clientPrice !== undefined) updateData.clientPrice = body.clientPrice;
     if (body.checklists !== undefined) updateData.checklists = body.checklists;
 
     const order = await db.order.update({
@@ -83,6 +84,18 @@ export async function PATCH(
     });
 
     emitOrderUpdate(id);
+
+    // Если заказ завершается — записываем выручку
+    if (body.status === 'COMPLETED' && order.clientPrice > 0) {
+      await db.financialRecord.create({
+        data: {
+          type: 'INCOME',
+          amount: order.clientPrice,
+          description: `Выручка по заказу: ${order.title}`,
+          orderId: id,
+        },
+      });
+    }
 
     // Если заказ отменяется — закрываем рассылку у всех сотрудников
     if (body.status === 'CANCELLED') {

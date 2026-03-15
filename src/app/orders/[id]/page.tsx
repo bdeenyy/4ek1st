@@ -726,6 +726,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                   workType: order.workType,
                   requiredPeople: order.requiredPeople,
                   pricePerPerson: order.pricePerPerson,
+                  clientPrice: order.clientPrice ?? 0,
                 });
                 setIsEditDialogOpen(true);
               }}>
@@ -851,8 +852,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                   <Input type="number" min="1" value={editForm.requiredPeople} onChange={(e) => setEditForm({ ...editForm, requiredPeople: parseInt(e.target.value) || 1 })} />
                 </div>
                 <div className="space-y-1">
-                  <Label>Цена за человека (₽) *</Label>
+                  <Label>Оплата сотруднику (₽) *</Label>
                   <Input type="number" min="0" value={editForm.pricePerPerson} onChange={(e) => setEditForm({ ...editForm, pricePerPerson: parseFloat(e.target.value) || 0 })} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Стоимость для клиента (₽)</Label>
+                  <Input type="number" min="0" value={editForm.clientPrice} onChange={(e) => setEditForm({ ...editForm, clientPrice: parseFloat(e.target.value) || 0 })} />
                 </div>
               </div>
             </div>

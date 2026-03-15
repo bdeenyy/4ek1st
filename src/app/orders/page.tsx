@@ -52,7 +52,7 @@ function OrdersPageInner() {
   const resetNewOrder = () => ({
     title: "", description: "", clientName: "", clientPhone: "", district: "", street: "",
     houseNumber: "", officeNumber: "", workDate: new Date(), workTime: "09:00", workType: "",
-    requiredPeople: 1, pricePerPerson: 0, botId: "", templateId: "",
+    requiredPeople: 1, pricePerPerson: 0, clientPrice: 0, botId: "", templateId: "",
     checklists: [] as { text: string; done: boolean }[],
   });
 
@@ -352,9 +352,14 @@ function OrdersPageInner() {
                     onChange={(e) => setNewOrder({...newOrder, requiredPeople: parseInt(e.target.value) || 1})} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="pricePerPerson">Цена за человека (₽) *</Label>
+                  <Label htmlFor="pricePerPerson">Оплата сотруднику (₽) *</Label>
                   <Input id="pricePerPerson" type="number" min="0" value={newOrder.pricePerPerson}
                     onChange={(e) => setNewOrder({...newOrder, pricePerPerson: parseFloat(e.target.value) || 0})} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="clientPrice">Стоимость для клиента (₽)</Label>
+                  <Input id="clientPrice" type="number" min="0" value={newOrder.clientPrice}
+                    onChange={(e) => setNewOrder({...newOrder, clientPrice: parseFloat(e.target.value) || 0})} />
                 </div>
               </div>
             </div>
