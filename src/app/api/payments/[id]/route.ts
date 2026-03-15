@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { notifyEmployeePaid } from "@/lib/notifications";
 
 // GET /api/payments/[id] - Get payment by ID
 export async function GET(
@@ -68,12 +69,22 @@ export async function PUT(
     const body = await request.json();
     const { status, paidAt } = body;
 
+    // Получаем текущий статус перед обновлением
+    const existing = await db.payment.findUnique({
+      where: { id },
+      select: { status: true, amount: true, employeeId: true }
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: "Payment not found" }, { status: 404 });
+    }
+
     const updateData: Record<string, unknown> = {};
-    
+
     if (status && ["PENDING", "PAID", "CANCELLED"].includes(status)) {
       updateData.status = status;
     }
-    
+
     if (status === "PAID") {
       updateData.paidAt = paidAt ? new Date(paidAt) : new Date();
     }
@@ -91,6 +102,30 @@ export async function PUT(
         },
       },
     });
+
+    // При переходе в PAID выполняем дополнительные действия
+    if (status === "PAID" && existing.status !== "PAID") {
+      // Декрементируем баланс сотрудника
+      await db.employee.update({
+        where: { id: existing.employeeId },
+        data: { balance: { decrement: existing.amount } }
+      });
+
+      // Создаём запись в финансовом журнале о фактической выплате
+      await db.financialRecord.create({
+        data: {
+          type: "EXPENSE",
+          amount: existing.amount,
+          description: `Выплата сотруднику: ${payment.employee.firstName} ${payment.employee.lastName}`,
+          employeeId: existing.employeeId,
+        }
+      });
+
+      // Уведомляем сотрудника о выплате (не блокируем ответ при ошибке)
+      notifyEmployeePaid(id).catch((err) =>
+        console.error(`[Payment] Failed to notify employee about payment ${id}:`, err)
+      );
+    }
 
     return NextResponse.json(payment);
   } catch (error) {

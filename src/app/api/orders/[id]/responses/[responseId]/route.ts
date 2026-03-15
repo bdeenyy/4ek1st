@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { emitOrderUpdate } from "@/lib/socket-helper";
 import { closeOrderBroadcast } from "@/bot/broadcast";
+import { accrueEmployeeSalary } from "@/lib/salary";
 
 export async function PATCH(
   request: NextRequest,
@@ -38,22 +39,12 @@ export async function PATCH(
 
     // При ручном завершении через дашборд — начисляем зарплату
     if (body.status === "COMPLETED") {
-      const salary = response.order.pricePerPerson;
-      if (salary > 0) {
-        await db.financialRecord.create({
-          data: {
-            type: "EXPENSE",
-            amount: salary,
-            description: `Оплата за заказ: ${response.order.title}`,
-            employeeId: response.employeeId,
-            orderId: id,
-          }
-        });
-        await db.employee.update({
-          where: { id: response.employeeId },
-          data: { balance: { increment: salary } }
-        });
-      }
+      await accrueEmployeeSalary(
+        response.employeeId,
+        id,
+        response.order.title,
+        response.order.pricePerPerson
+      );
     }
 
     // Импортируем сервис уведомлений

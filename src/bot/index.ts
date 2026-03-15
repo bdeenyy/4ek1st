@@ -17,6 +17,7 @@ import {
   notifyEmployeeRejected
 } from '@/lib/notifications';
 import { closeOrderBroadcast } from './broadcast';
+import { accrueEmployeeSalary } from '@/lib/salary';
 
 // Типы для бота
 interface BotContext extends Context {
@@ -664,21 +665,7 @@ async function handleWorkConfirm(ctx: BotContext, telegramId: string, orderId: s
 
   // Начисляем зарплату сотруднику
   const salary = response.order.pricePerPerson;
-  if (salary > 0) {
-    await db.financialRecord.create({
-      data: {
-        type: 'EXPENSE',
-        amount: salary,
-        description: `Оплата за заказ: ${response.order.title}`,
-        employeeId: response.employeeId,
-        orderId: orderId,
-      }
-    });
-    await db.employee.update({
-      where: { id: response.employeeId },
-      data: { balance: { increment: salary } }
-    });
-  }
+  await accrueEmployeeSalary(response.employeeId, orderId, response.order.title, salary);
 
   // Освобождаем сотрудника
   await db.employee.update({

@@ -512,11 +512,10 @@ export async function requestOrderRating(
 
     // Получаем Telegram ID менеджера
     const botRecord = await prisma.bot.findUnique({ where: { id: order.botId } });
-    const managerTelegramId = (botRecord as any)?.telegramManagerId
-      ?? (await prisma.contact.findFirst({ where: { botId: order.botId } }))?.telegramId;
+    const managerTelegramId = (botRecord as any)?.telegramManagerId;
 
     if (!managerTelegramId) {
-      return { success: false, errors: ['No manager telegramId configured'] };
+      return { success: false, errors: ['telegramManagerId not configured for bot ' + order.botId] };
     }
 
     const bot = getBot(order.botId) ?? createBot(order.bot.token, order.botId);
@@ -561,6 +560,89 @@ ${emp.phone ? `📞 *Телефон:* ${esc(emp.phone)}` : ''}
   }
 }
 
+/**
+ * Отправка уведомления сотруднику о произведённой выплате
+ */
+export async function notifyEmployeePaid(
+  paymentId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: { employee: true }
+    });
+
+    if (!payment || !payment.employee) {
+      return { success: false, error: 'Payment or employee not found' };
+    }
+
+    const employee = payment.employee;
+
+    if (!employee.telegramId) {
+      return { success: false, error: 'Employee has no telegramId' };
+    }
+
+    // Найти бот через последний заказ сотрудника (из orderIds или из OrderResponse)
+    let botRecord: { token: string; id: string } | null = null;
+
+    if (payment.orderIds) {
+      const orderIds = JSON.parse(payment.orderIds) as string[];
+      if (orderIds.length > 0) {
+        const order = await prisma.order.findFirst({
+          where: { id: { in: orderIds } },
+          include: { bot: true }
+        });
+        if (order?.bot) {
+          botRecord = { token: order.bot.token, id: order.bot.id };
+        }
+      }
+    }
+
+    // Fallback: ищем через последний завершённый OrderResponse сотрудника
+    if (!botRecord) {
+      const lastResponse = await prisma.orderResponse.findFirst({
+        where: { employeeId: employee.id, status: 'COMPLETED' },
+        orderBy: { completedAt: 'desc' },
+        include: { order: { include: { bot: true } } }
+      });
+      if (lastResponse?.order?.bot) {
+        botRecord = { token: lastResponse.order.bot.token, id: lastResponse.order.bot.id };
+      }
+    }
+
+    if (!botRecord) {
+      return { success: false, error: 'Cannot determine bot for employee notification' };
+    }
+
+    const bot = getBot(botRecord.id) ?? createBot(botRecord.token, botRecord.id);
+
+    const dateStr = new Date(payment.paidAt ?? new Date()).toLocaleDateString('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+
+    const message = `
+💸 *Вам произведена выплата\\!*
+
+💰 *Сумма:* ${esc(payment.amount)} ₽
+📅 *Дата:* ${esc(dateStr)}
+${payment.description ? `📝 *Комментарий:* ${esc(payment.description)}` : ''}
+
+Спасибо за работу\\!
+    `.trim();
+
+    await bot.telegram.sendMessage(employee.telegramId, message, {
+      parse_mode: 'MarkdownV2'
+    });
+
+    return { success: true };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, error: errorMessage };
+  }
+}
+
 export default {
   notifyManagerAboutResponse,
   notifyManagerCheckin,
@@ -568,6 +650,7 @@ export default {
   notifyManagerCancelledByEmployee,
   notifyEmployeeAssigned,
   notifyEmployeeRejected,
+  notifyEmployeePaid,
   processShiftReminders,
   scheduleShiftReminder,
   notifyOrderCancelled,
