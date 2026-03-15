@@ -63,18 +63,47 @@ export async function notifyManagerAboutResponse(
       return { success: false, error: 'Order, employee or bot not found' };
     }
 
+    // Находим responseId для кнопок действий
+    const response = await prisma.orderResponse.findFirst({
+      where: { orderId, employeeId }
+    });
+
+    if (!response) {
+      return { success: false, error: 'OrderResponse not found' };
+    }
+
     const message = `
 🔔 *Новый отклик на заказ!*
 
 📋 *Заказ:* ${order.title}
 👤 *Сотрудник:* ${employee.firstName} ${employee.lastName}
-📞 *Телефон:* ${employee.phone}
+📞 *Телефон:* ${employee.phone || 'не указан'}
 ${employee.rating > 0 ? `⭐ *Рейтинг:* ${employee.rating.toFixed(1)}` : ''}
-
-Войдите в панель управления для назначения сотрудника.
     `.trim();
 
-    await sendMessageToManager(order.creatorId, order.bot.token, order.botId, message);
+    // Получаем Telegram ID менеджера
+    const botRecord = await prisma.bot.findUnique({ where: { id: order.botId } });
+    const managerTelegramId = (botRecord as any)?.telegramManagerId
+      ?? (await prisma.contact.findFirst({ where: { botId: order.botId } }))?.telegramId;
+
+    if (!managerTelegramId) {
+      console.log('[Notification] No manager telegramId for bot ' + order.botId);
+      return { success: true };
+    }
+
+    const { Markup } = require('telegraf');
+    const bot = getBot(order.botId) ?? createBot(order.bot.token, order.botId);
+
+    await bot.telegram.sendMessage(managerTelegramId, message, {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback('✅ Назначить', `assign_${response.id}`),
+          Markup.button.callback('❌ Отклонить', `reject_${response.id}`)
+        ]
+      ])
+    });
+
     return { success: true };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -449,76 +478,80 @@ ${reason ? `Причина: ${reason}` : 'Причина не указана'}
 }
 
 /**
- * Отправка уведомления о завершении заказа с запросом рейтинга
+ * Отправка менеджеру запроса на оценку сотрудников после завершения заказа.
+ * Для каждого завершившего сотрудника — отдельное сообщение с кнопками 1–5.
  */
 export async function requestOrderRating(
   orderId: string
 ): Promise<{ success: boolean; errors: string[] }> {
   const errors: string[] = [];
   let success = true;
-  
+
   try {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       include: {
         bot: true,
         responses: {
-          where: {
-            status: 'COMPLETED'
-          },
-          include: {
-            employee: true
-          }
+          where: { status: 'COMPLETED' },
+          include: { employee: true }
         }
       }
     });
-    
+
     if (!order || !order.bot) {
       return { success: false, errors: ['Order or bot not found'] };
     }
-    
-    let bot = getBot(order.botId);
-    if (!bot) {
-      bot = createBot(order.bot.token, order.botId);
+
+    if (order.responses.length === 0) {
+      return { success: true, errors: [] };
     }
-    
-    const message = `
-✅ *Заказ завершён!*
 
-📍 *${order.title}*
+    // Получаем Telegram ID менеджера
+    const botRecord = await prisma.bot.findUnique({ where: { id: order.botId } });
+    const managerTelegramId = (botRecord as any)?.telegramManagerId
+      ?? (await prisma.contact.findFirst({ where: { botId: order.botId } }))?.telegramId;
 
-Пожалуйста, оцените работу сотрудника(ов):
-    `;
-    
+    if (!managerTelegramId) {
+      return { success: false, errors: ['No manager telegramId configured'] };
+    }
+
+    const bot = getBot(order.botId) ?? createBot(order.bot.token, order.botId);
     const { Markup } = require('telegraf');
-    
+
     for (const response of order.responses) {
-      if (response.employee.telegramId) {
-        try {
-          await bot.telegram.sendMessage(response.employee.telegramId, message, {
-            parse_mode: 'Markdown',
-            ...Markup.inlineKeyboard([
-              [
-                Markup.button.callback('⭐ 5', `rate_${orderId}_${response.employee.id}_5`),
-                Markup.button.callback('⭐ 4', `rate_${orderId}_${response.employee.id}_4`),
-                Markup.button.callback('⭐ 3', `rate_${orderId}_${response.employee.id}_3`)
-              ],
-              [
-                Markup.button.callback('⭐ 2', `rate_${orderId}_${response.employee.id}_2`),
-                Markup.button.callback('⭐ 1', `rate_${orderId}_${response.employee.id}_1`)
-              ]
-            ])
-          });
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-          errors.push(`Employee ${response.employee.id}: ${errorMessage}`);
-          success = false;
-        }
+      const emp = response.employee;
+      const name = `${emp.firstName} ${emp.lastName}`.trim();
+      const message = `
+⭐ *Оцените сотрудника*
+
+📍 *Заказ:* ${order.title}
+👤 *Сотрудник:* ${name}
+${emp.phone ? `📞 *Телефон:* ${emp.phone}` : ''}
+      `.trim();
+
+      try {
+        await bot.telegram.sendMessage(managerTelegramId, message, {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback('⭐ 5', `rate_${orderId}_${emp.id}_5`),
+              Markup.button.callback('⭐ 4', `rate_${orderId}_${emp.id}_4`),
+              Markup.button.callback('⭐ 3', `rate_${orderId}_${emp.id}_3`),
+              Markup.button.callback('⭐ 2', `rate_${orderId}_${emp.id}_2`),
+              Markup.button.callback('⭐ 1', `rate_${orderId}_${emp.id}_1`)
+            ]
+          ])
+        });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        errors.push(`Employee ${emp.id}: ${errorMessage}`);
+        success = false;
       }
     }
-    
+
     return { success, errors };
-    
+
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return { success: false, errors: [errorMessage] };

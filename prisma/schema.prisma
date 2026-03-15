@@ -173,8 +173,9 @@ model Order {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   
-  responses       OrderResponse[]
-  financialRecords FinancialRecord[]
+  responses         OrderResponse[]
+  financialRecords  FinancialRecord[]
+  broadcastMessages BroadcastMessage[]
 }
 
 enum PublishType {
@@ -293,6 +294,18 @@ model WorkHistory {
   rating      Float?
   notes       String?
   createdAt   DateTime @default(now())
+}
+
+// Хранение ID сообщений рассылки (для редактирования при закрытии заказа)
+model BroadcastMessage {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  chatId    String   // Telegram ID получателя
+  messageId Int      // Telegram message_id
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
 }
 
 // Выплаты сотрудникам
