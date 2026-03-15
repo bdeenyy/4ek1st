@@ -269,7 +269,7 @@ ${order.district ? `Район: ${order.district}` : ''}
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
         [
-          Markup.button.callback('✅ Подтверждаю', `confirm_${orderId}`),
+          Markup.button.callback('✅ Подтверждаю участие', `ack_${orderId}`),
           Markup.button.callback('❌ Не могу', `cancel_${orderId}`)
         ]
       ])
