@@ -69,10 +69,32 @@ export async function POST(request: NextRequest) {
     }
     
     // Обрабатываем обновление
-    await bot.handleUpdate(body);
-    
+    try {
+      await bot.handleUpdate(body);
+    } catch (error: any) {
+      const msg = error?.message ?? '';
+
+      // Пользователь заблокировал бота — помечаем контакт BANNED и возвращаем 200
+      // чтобы Telegram прекратил ретраи этого update
+      if (msg.includes('403') || msg.includes('blocked') || msg.includes('deactivated') || msg.includes('user is deactivated')) {
+        const telegramId = body?.message?.from?.id?.toString()
+          ?? body?.callback_query?.from?.id?.toString();
+        if (telegramId && botId) {
+          await db.contact.updateMany({
+            where: { telegramId, botId },
+            data: { status: 'BANNED' },
+          }).catch(() => {});
+        }
+        console.warn(`[Webhook] Bot blocked by user ${telegramId}, marked BANNED`);
+        return NextResponse.json({ ok: true });
+      }
+
+      console.error('[Webhook] Error:', error);
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
+
     return NextResponse.json({ ok: true });
-    
+
   } catch (error) {
     console.error('[Webhook] Error:', error);
     return NextResponse.json(
