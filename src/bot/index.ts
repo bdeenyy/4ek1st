@@ -307,6 +307,12 @@ async function handleCallbackQuery(ctx: BotContext) {
     else if (data.startsWith('decline_')) {
       await handleOrderDecline(ctx, telegramId, data.replace('decline_', ''));
     }
+    else if (data.startsWith('ack_')) {
+      // Подтверждение участия в заказе (после назначения менеджером)
+      await ctx.answerCbQuery('Отлично! Ждём вас на объекте 👍');
+      await ctx.editMessageReplyMarkup(undefined);
+      await ctx.reply('✅ Вы подтвердили участие. По прибытии сделайте чек-ин через «📋 Мои заказы».');
+    }
     else if (data.startsWith('cancel_')) {
       await handleOrderCancel(ctx, telegramId, data.replace('cancel_', ''));
     }
