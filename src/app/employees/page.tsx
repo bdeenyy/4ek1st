@@ -44,7 +44,7 @@ export default function EmployeesPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [newEmployee, setNewEmployee] = useState({ firstName: "", lastName: "", middleName: "", phone: "", phone2: "", telegramId: "", notes: "" });
+  const [newEmployee, setNewEmployee] = useState({ firstName: "", lastName: "", middleName: "", phone: "", phone2: "", telegramId: "", notes: "", tagIds: [] as string[] });
 
   useEffect(() => { if (status === "unauthenticated") router.push("/login"); }, [status, router]);
   useEffect(() => { if (status === "authenticated") { fetchEmployees(); fetchTags(); } }, [status]);
@@ -90,8 +90,9 @@ export default function EmployeesPage() {
 
   const handleCreateEmployee = async () => {
     try {
-      const response = await fetch("/api/employees", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newEmployee) });
-      if (response.ok) { const created = await response.json(); setEmployees([created, ...employees]); setIsCreateDialogOpen(false); setNewEmployee({ firstName: "", lastName: "", middleName: "", phone: "", phone2: "", telegramId: "", notes: "" }); toast({ title: "Сотрудник добавлен" }); }
+      const { tagIds, ...rest } = newEmployee;
+      const response = await fetch("/api/employees", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...rest, tags: tagIds }) });
+      if (response.ok) { const created = await response.json(); setEmployees([created, ...employees]); setIsCreateDialogOpen(false); setNewEmployee({ firstName: "", lastName: "", middleName: "", phone: "", phone2: "", telegramId: "", notes: "", tagIds: [] }); toast({ title: "Сотрудник добавлен" }); }
     } catch (error) { toast({ title: "Ошибка", description: "Не удалось добавить сотрудника", variant: "destructive" }); }
   };
 
@@ -140,6 +141,32 @@ export default function EmployeesPage() {
               <div className="grid grid-cols-3 gap-2"><div className="space-y-1"><Label>Фамилия</Label><Input value={newEmployee.lastName} onChange={(e) => setNewEmployee({...newEmployee, lastName: e.target.value})} /></div><div className="space-y-1"><Label>Имя</Label><Input value={newEmployee.firstName} onChange={(e) => setNewEmployee({...newEmployee, firstName: e.target.value})} /></div><div className="space-y-1"><Label>Отчество</Label><Input value={newEmployee.middleName} onChange={(e) => setNewEmployee({...newEmployee, middleName: e.target.value})} /></div></div>
               <div className="grid grid-cols-2 gap-2"><div className="space-y-1"><Label>Телефон</Label><Input value={newEmployee.phone} onChange={(e) => setNewEmployee({...newEmployee, phone: e.target.value})} /></div><div className="space-y-1"><Label>Telegram ID</Label><Input value={newEmployee.telegramId} onChange={(e) => setNewEmployee({...newEmployee, telegramId: e.target.value})} /></div></div>
               <div className="space-y-1"><Label>Заметки</Label><Textarea value={newEmployee.notes} onChange={(e) => setNewEmployee({...newEmployee, notes: e.target.value})} /></div>
+              {tags.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Теги</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {tags.map((tag: any) => {
+                      const selected = newEmployee.tagIds.includes(tag.id);
+                      return (
+                        <button
+                          key={tag.id}
+                          type="button"
+                          onClick={() => setNewEmployee({
+                            ...newEmployee,
+                            tagIds: selected
+                              ? newEmployee.tagIds.filter(id => id !== tag.id)
+                              : [...newEmployee.tagIds, tag.id]
+                          })}
+                          className={`px-2 py-0.5 rounded-full text-xs font-medium border-2 transition-opacity ${selected ? 'opacity-100' : 'opacity-40'}`}
+                          style={{ backgroundColor: tag.color, borderColor: tag.color, color: '#fff' }}
+                        >
+                          {tag.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
             <DialogFooter><Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Отмена</Button><Button onClick={handleCreateEmployee}>Добавить</Button></DialogFooter>
           </DialogContent>

@@ -13,6 +13,9 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { 
   ArrowLeft, MapPin, Calendar, Clock, Users, Phone, Mail, 
   CheckCircle, XCircle, UserPlus, UserX, Send, Edit, Trash2,
@@ -113,9 +116,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
-  const [checklists, setChecklists] = useState<string[]>([]);
-  const [checkedItems, setCheckedItems] = useState<boolean[]>([]);
+  const [checklists, setChecklists] = useState<{ text: string; done: boolean }[]>([]);
   const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editForm, setEditForm] = useState<any>(null);
   const [isRatingDialogOpen, setIsRatingDialogOpen] = useState(false);
   const [ratingResponseId, setRatingResponseId] = useState<string | null>(null);
   const [ratingValue, setRatingValue] = useState(5);
@@ -161,11 +165,18 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         const data = await response.json();
         setOrder(data);
         
-        // Parse checklists
+        // Parse checklists (поддерживаем старый формат string[] и новый {text, done}[])
         if (data.checklists) {
-          const parsed = JSON.parse(data.checklists);
-          setChecklists(parsed);
-          setCheckedItems(new Array(parsed.length).fill(false));
+          try {
+            const parsed = JSON.parse(data.checklists);
+            if (parsed.length > 0 && typeof parsed[0] === 'string') {
+              setChecklists(parsed.map((text: string) => ({ text, done: false })));
+            } else {
+              setChecklists(parsed);
+            }
+          } catch { setChecklists([]); }
+        } else {
+          setChecklists([]);
         }
       } else {
         toast({
@@ -331,10 +342,34 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     }
   };
 
-  const handleChecklistChange = (index: number, checked: boolean) => {
-    const newCheckedItems = [...checkedItems];
-    newCheckedItems[index] = checked;
-    setCheckedItems(newCheckedItems);
+  const handleChecklistChange = async (index: number, checked: boolean) => {
+    const updated = checklists.map((item, i) => i === index ? { ...item, done: checked } : item);
+    setChecklists(updated);
+    await fetch(`/api/orders/${resolvedParams.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ checklists: JSON.stringify(updated) }),
+    });
+  };
+
+  const handleEditOrder = async () => {
+    if (!editForm) return;
+    try {
+      const res = await fetch(`/api/orders/${resolvedParams.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      });
+      if (res.ok) {
+        setIsEditDialogOpen(false);
+        fetchOrder();
+        toast({ title: 'Заказ обновлён' });
+      } else {
+        toast({ title: 'Ошибка сохранения', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Ошибка сохранения', variant: 'destructive' });
+    }
   };
 
   if (status === "loading" || loading) return <div className="p-6">Загрузка...</div>;
@@ -471,8 +506,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                         <div key={index} className="flex items-center gap-3">
                           <Checkbox
                             id={`checklist-${index}`}
-                            checked={checkedItems[index]}
-                            onCheckedChange={(checked) => 
+                            checked={item.done}
+                            onCheckedChange={(checked) =>
                               handleChecklistChange(index, checked as boolean)
                             }
                           />
@@ -480,10 +515,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                             htmlFor={`checklist-${index}`}
                             className={cn(
                               "text-sm cursor-pointer",
-                              checkedItems[index] && "line-through text-muted-foreground"
+                              item.done && "line-through text-muted-foreground"
                             )}
                           >
-                            {item}
+                            {item.text}
                           </label>
                         </div>
                       ))}
@@ -677,7 +712,23 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                   Завершить
                 </Button>
               )}
-              <Button variant="outline" className="w-full">
+              <Button variant="outline" className="w-full" onClick={() => {
+                setEditForm({
+                  title: order.title,
+                  description: order.description ?? '',
+                  clientName: order.clientName,
+                  clientPhone: order.clientPhone,
+                  district: order.district ?? '',
+                  street: order.street,
+                  houseNumber: order.houseNumber,
+                  officeNumber: order.officeNumber ?? '',
+                  workTime: order.workTime,
+                  workType: order.workType,
+                  requiredPeople: order.requiredPeople,
+                  pricePerPerson: order.pricePerPerson,
+                });
+                setIsEditDialogOpen(true);
+              }}>
                 <Edit className="h-4 w-4 mr-2" />
                 Редактировать
               </Button>
@@ -736,6 +787,82 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Редактировать заказ</DialogTitle>
+            <DialogDescription>Измените данные заказа и нажмите Сохранить</DialogDescription>
+          </DialogHeader>
+          {editForm && (
+            <div className="grid gap-4 py-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label>Название *</Label>
+                  <Input value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Тип работ *</Label>
+                  <Input value={editForm.workType} onChange={(e) => setEditForm({ ...editForm, workType: e.target.value })} />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label>Описание</Label>
+                <Textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} rows={2} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label>Имя клиента *</Label>
+                  <Input value={editForm.clientName} onChange={(e) => setEditForm({ ...editForm, clientName: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Телефон клиента</Label>
+                  <Input value={editForm.clientPhone} onChange={(e) => setEditForm({ ...editForm, clientPhone: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <Label>Район</Label>
+                  <Input value={editForm.district} onChange={(e) => setEditForm({ ...editForm, district: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Улица *</Label>
+                  <Input value={editForm.street} onChange={(e) => setEditForm({ ...editForm, street: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Дом *</Label>
+                  <Input value={editForm.houseNumber} onChange={(e) => setEditForm({ ...editForm, houseNumber: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label>Время</Label>
+                  <Input type="time" value={editForm.workTime} onChange={(e) => setEditForm({ ...editForm, workTime: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Офис / кв.</Label>
+                  <Input value={editForm.officeNumber} onChange={(e) => setEditForm({ ...editForm, officeNumber: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label>Кол-во человек *</Label>
+                  <Input type="number" min="1" value={editForm.requiredPeople} onChange={(e) => setEditForm({ ...editForm, requiredPeople: parseInt(e.target.value) || 1 })} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Цена за человека (₽) *</Label>
+                  <Input type="number" min="0" value={editForm.pricePerPerson} onChange={(e) => setEditForm({ ...editForm, pricePerPerson: parseFloat(e.target.value) || 0 })} />
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Отмена</Button>
+            <Button onClick={handleEditOrder}>Сохранить</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Rating Dialog */}
       <Dialog open={isRatingDialogOpen} onOpenChange={setIsRatingDialogOpen}>
