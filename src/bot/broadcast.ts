@@ -6,6 +6,10 @@
 import { db } from '@/lib/db';
 import { getBot, createBot } from './index';
 
+/** Экранирует спецсимволы для Telegram MarkdownV2 */
+const esc = (s: string | number | null | undefined): string =>
+  String(s ?? '').replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
+
 
 
 interface OrderData {
@@ -89,7 +93,7 @@ export async function publishOrder(orderId: string): Promise<{
     for (const contact of contacts) {
       try {
         const sent = await bot.telegram.sendMessage(contact.telegramId, message, {
-          parse_mode: 'Markdown',
+          parse_mode: 'MarkdownV2',
           ...keyboard
         });
         broadcastRecords.push({
@@ -167,7 +171,7 @@ export async function closeOrderBroadcast(
           bm.messageId,
           undefined,
           updatedText,
-          { parse_mode: 'Markdown' }
+          { parse_mode: 'MarkdownV2' }
         );
       } catch {
         // Сообщение могло быть удалено пользователем — игнорируем
@@ -208,7 +212,7 @@ export async function publishOrderToChannel(
     const keyboard = createOrderKeyboard(order.id);
 
     await bot.telegram.sendMessage(channelId, message, {
-      parse_mode: 'Markdown',
+      parse_mode: 'MarkdownV2',
       ...keyboard
     });
 
@@ -318,16 +322,16 @@ export async function sendShiftReminder(
     });
 
     const message = `
-⏰ *Напоминание о смене!*
+⏰ *Напоминание о смене\\!*
 
-📍 *${order.title}*
+📍 *${esc(order.title)}*
 
-📅 *Дата:* ${dateStr}
-⏰ *Время:* ${order.workTime}
-📍 *Адрес:* ул. ${order.street}, д. ${order.houseNumber}
+📅 *Дата:* ${esc(dateStr)}
+⏰ *Время:* ${esc(order.workTime)}
+📍 *Адрес:* ул\\. ${esc(order.street)}, д\\. ${esc(order.houseNumber)}
 
-До начала смены остался 1 час!
-Пожалуйста, не забудьте нажать кнопку ниже, когда прибудете на место.
+До начала смены остался 1 час\\!
+Пожалуйста, не забудьте нажать кнопку ниже, когда прибудете на место\\.
     `;
 
     const { Markup } = require('telegraf');
@@ -336,7 +340,7 @@ export async function sendShiftReminder(
     ]);
 
     await bot.telegram.sendMessage(employee.telegramId, message, {
-      parse_mode: 'Markdown',
+      parse_mode: 'MarkdownV2',
       ...keyboard
     });
 
@@ -359,19 +363,19 @@ function formatOrderMessage(order: OrderData): string {
   });
 
   return `
-📢 *Новый заказ!*
+📢 *Новый заказ\\!*
 
-📍 *${order.title}*
-${order.description ? `\n📝 ${order.description}` : ''}
+📍 *${esc(order.title)}*
+${order.description ? `\n📝 ${esc(order.description)}` : ''}
 
-📅 *Дата:* ${dateStr}
-⏰ *Время:* ${order.workTime}
-🔧 *Тип работ:* ${order.workType}
-👥 *Требуется:* ${order.requiredPeople} чел.
-💰 *Оплата:* ${order.pricePerPerson} ₽/чел.
+📅 *Дата:* ${esc(dateStr)}
+⏰ *Время:* ${esc(order.workTime)}
+🔧 *Тип работ:* ${esc(order.workType)}
+👥 *Требуется:* ${esc(order.requiredPeople)} чел\\.
+💰 *Оплата:* ${esc(order.pricePerPerson)} ₽/чел\\.
 
 📍 *Адрес:*
-${order.district ? `Район: ${order.district}\n` : ''}ул. ${order.street}, д. ${order.houseNumber}
+${order.district ? `Район: ${esc(order.district)}\n` : ''}ул\\. ${esc(order.street)}, д\\. ${esc(order.houseNumber)}
   `;
 }
 

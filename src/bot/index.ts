@@ -152,37 +152,38 @@ async function handleMyOrders(ctx: BotContext) {
       return ctx.reply('У вас пока нет активных заказов.');
     }
 
+    const escMd = (s: string) => s.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
     let message = '📋 *Ваши активные заказы:*\n\n';
     for (const resp of activeResponses) {
       const order = resp.order;
       const dateStr = new Date(order.workDate).toLocaleDateString('ru-RU');
-      const statusText = resp.status === 'ASSIGNED' ? '🟡 Ожидает чек-ина' : '🟢 В работе';
-      
-      message += `📍 *${order.title}*\n`;
-      message += `🗓 ${dateStr} в ${order.workTime}\n`;
-      message += `🏠 ул. ${order.street}, д. ${order.houseNumber}\n`;
+      const statusText = resp.status === 'ASSIGNED' ? '🟡 Ожидает чек\\-ина' : '🟢 В работе';
+
+      message += `📍 *${escMd(order.title)}*\n`;
+      message += `🗓 ${escMd(dateStr)} в ${escMd(order.workTime)}\n`;
+      message += `🏠 ул\\. ${escMd(order.street)}, д\\. ${escMd(order.houseNumber)}\n`;
       message += `Статус: ${statusText}\n`;
       
       // Добавляем инлайн кнопку для чек-ина или завершения
       if (resp.status === 'ASSIGNED') {
          message += `\n`;
-         await ctx.reply(message, { 
-           parse_mode: 'Markdown',
+         await ctx.reply(message, {
+           parse_mode: 'MarkdownV2',
            ...Markup.inlineKeyboard([[Markup.button.callback('📍 Я на месте (Чек-ин)', `checkin_${order.id}`)]])
          });
       } else if (resp.status === 'CHECKED_IN') {
          message += `\n`;
-         await ctx.reply(message, { 
-           parse_mode: 'Markdown',
+         await ctx.reply(message, {
+           parse_mode: 'MarkdownV2',
            ...Markup.inlineKeyboard([[Markup.button.callback('✅ Завершить работу', `confirm_${order.id}`)]])
          });
       }
       message = ''; // Сбрасываем для следующего, так как мы отправили сообщение с кнопкой
     }
-    
+
     // Если остались сообщения без кнопок (на всякий случай)
     if (message !== '📋 *Ваши активные заказы:*\n\n' && message !== '') {
-      await ctx.reply(message, { parse_mode: 'Markdown' });
+      await ctx.reply(message, { parse_mode: 'MarkdownV2' });
     }
 
   } catch (error) {
@@ -754,10 +755,11 @@ async function handleManagerAssign(ctx: BotContext, responseId: string) {
 
   emitOrderUpdate(response.orderId);
 
-  const name = `${response.employee.firstName} ${response.employee.lastName}`.trim();
+  const escMd2 = (s: string) => s.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
+  const name = escMd2(`${response.employee.firstName} ${response.employee.lastName}`.trim());
   await ctx.editMessageText(
-    `✅ *${name}* назначен на заказ «${response.order.title}».\nСотруднику отправлено уведомление.`,
-    { parse_mode: 'Markdown' }
+    `✅ *${name}* назначен на заказ «${escMd2(response.order.title)}»\\.\nСотруднику отправлено уведомление\\.`,
+    { parse_mode: 'MarkdownV2' }
   );
 }
 
@@ -789,10 +791,11 @@ async function handleManagerReject(ctx: BotContext, responseId: string) {
   await notifyEmployeeRejected(response.orderId, response.employeeId);
   emitOrderUpdate(response.orderId);
 
-  const name = `${response.employee.firstName} ${response.employee.lastName}`.trim();
+  const escMd3 = (s: string) => s.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
+  const name = escMd3(`${response.employee.firstName} ${response.employee.lastName}`.trim());
   await ctx.editMessageText(
-    `❌ Отклик *${name}* отклонён. Сотруднику отправлено уведомление.`,
-    { parse_mode: 'Markdown' }
+    `❌ Отклик *${name}* отклонён\\. Сотруднику отправлено уведомление\\.`,
+    { parse_mode: 'MarkdownV2' }
   );
 }
 
@@ -913,18 +916,20 @@ async function handleProfile(ctx: BotContext) {
     day: 'numeric', month: 'long', year: 'numeric'
   });
 
+  const esc = (s: string) => s.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
+
   let profileText = `👤 *Ваш профиль*\n\n`;
-  profileText += `📛 *Имя:* ${name}\n`;
-  profileText += `📱 *Телефон:* ${phone ? phone : '❌ Не указан'}\n`;
-  profileText += `🔗 *Username:* ${username}\n`;
-  profileText += `📊 *Статус:* ${statusText}\n`;
-  profileText += `📅 *В системе с:* ${registeredAt}\n`;
+  profileText += `📛 *Имя:* ${esc(name)}\n`;
+  profileText += `📱 *Телефон:* ${phone ? esc(phone) : '❌ Не указан'}\n`;
+  profileText += `🔗 *Username:* ${esc(username)}\n`;
+  profileText += `📊 *Статус:* ${esc(statusText)}\n`;
+  profileText += `📅 *В системе с:* ${esc(registeredAt)}\n`;
 
   if (employee) {
     const workCount = await db.workHistory.count({ where: { employeeId: employee.id } });
     if (workCount > 0) {
       const ratingStr = employee.rating > 0
-        ? `⭐ ${employee.rating.toFixed(1)} (${workCount} работ)`
+        ? `⭐ ${employee.rating.toFixed(1)} \\(${workCount} работ\\)`
         : `${workCount} работ, рейтинг ещё не выставлен`;
       profileText += `\n📈 *Статистика:* ${ratingStr}\n`;
     }
@@ -934,7 +939,7 @@ async function handleProfile(ctx: BotContext) {
     ? Markup.inlineKeyboard([[Markup.button.callback('📱 Обновить номер', 'update_phone')]])
     : Markup.inlineKeyboard([[Markup.button.callback('📱 Добавить номер телефона', 'update_phone')]]);
 
-  await ctx.reply(profileText, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.reply(profileText, { parse_mode: 'MarkdownV2', ...keyboard });
 }
 
 /**

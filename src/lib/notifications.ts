@@ -10,6 +10,10 @@ import { scheduleTask, QUEUES } from './queue';
 
 const prisma = new PrismaClient();
 
+/** Экранирует спецсимволы для Telegram MarkdownV2 */
+const esc = (s: string | number | null | undefined): string =>
+  String(s ?? '').replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
+
 // Интервал напоминания о смене (за сколько минут до начала)
 const REMINDER_BEFORE_MINUTES = 60;
 
@@ -29,7 +33,7 @@ async function sendMessageToManager(
 
   if (managerTelegramId) {
     const bot = getBot(botId) ?? createBot(botToken, botId);
-    await bot.telegram.sendMessage(managerTelegramId, message, { parse_mode: 'Markdown' });
+    await bot.telegram.sendMessage(managerTelegramId, message, { parse_mode: 'MarkdownV2' });
     return;
   }
 
@@ -42,7 +46,7 @@ async function sendMessageToManager(
   }
 
   const bot = getBot(botId) ?? createBot(botToken, botId);
-  await bot.telegram.sendMessage(managerContact.telegramId, message, { parse_mode: 'Markdown' });
+  await bot.telegram.sendMessage(managerContact.telegramId, message, { parse_mode: 'MarkdownV2' });
 }
 
 /**
@@ -73,12 +77,12 @@ export async function notifyManagerAboutResponse(
     }
 
     const message = `
-🔔 *Новый отклик на заказ!*
+🔔 *Новый отклик на заказ\\!*
 
-📋 *Заказ:* ${order.title}
-👤 *Сотрудник:* ${employee.firstName} ${employee.lastName}
-📞 *Телефон:* ${employee.phone || 'не указан'}
-${employee.rating > 0 ? `⭐ *Рейтинг:* ${employee.rating.toFixed(1)}` : ''}
+📋 *Заказ:* ${esc(order.title)}
+👤 *Сотрудник:* ${esc(employee.firstName)} ${esc(employee.lastName)}
+📞 *Телефон:* ${esc(employee.phone || 'не указан')}
+${employee.rating > 0 ? `⭐ *Рейтинг:* ${esc(employee.rating.toFixed(1))}` : ''}
     `.trim();
 
     // Получаем Telegram ID менеджера
@@ -95,7 +99,7 @@ ${employee.rating > 0 ? `⭐ *Рейтинг:* ${employee.rating.toFixed(1)}` : 
     const bot = getBot(order.botId) ?? createBot(order.bot.token, order.botId);
 
     await bot.telegram.sendMessage(managerTelegramId, message, {
-      parse_mode: 'Markdown',
+      parse_mode: 'MarkdownV2',
       ...Markup.inlineKeyboard([
         [
           Markup.button.callback('✅ Назначить', `assign_${response.id}`),
@@ -131,11 +135,11 @@ export async function notifyManagerCheckin(
 
     const timeStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     const message = `
-✅ *Сотрудник прибыл на место!*
+✅ *Сотрудник прибыл на место\\!*
 
-📋 *Заказ:* ${order.title}
-👤 *Сотрудник:* ${employee.firstName} ${employee.lastName}
-🕐 *Время чек-ина:* ${timeStr}
+📋 *Заказ:* ${esc(order.title)}
+👤 *Сотрудник:* ${esc(employee.firstName)} ${esc(employee.lastName)}
+🕐 *Время чек\\-ина:* ${esc(timeStr)}
     `.trim();
 
     await sendMessageToManager(order.creatorId, order.bot.token, order.botId, message);
@@ -165,13 +169,13 @@ export async function notifyManagerCompletion(
 
     const timeStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     const message = `
-🏁 *Сотрудник завершил работу!*
+🏁 *Сотрудник завершил работу\\!*
 
-📋 *Заказ:* ${order.title}
-👤 *Сотрудник:* ${employee.firstName} ${employee.lastName}
-🕐 *Время завершения:* ${timeStr}
+📋 *Заказ:* ${esc(order.title)}
+👤 *Сотрудник:* ${esc(employee.firstName)} ${esc(employee.lastName)}
+🕐 *Время завершения:* ${esc(timeStr)}
 
-Войдите в панель управления для оценки работы.
+Войдите в панель управления для оценки работы\\.
     `.trim();
 
     await sendMessageToManager(order.creatorId, order.bot.token, order.botId, message);
@@ -200,13 +204,13 @@ export async function notifyManagerCancelledByEmployee(
     }
 
     const message = `
-⚠️ *Сотрудник отказался от смены!*
+⚠️ *Сотрудник отказался от смены\\!*
 
-📋 *Заказ:* ${order.title}
-👤 *Сотрудник:* ${employee.firstName} ${employee.lastName}
-📞 *Телефон:* ${employee.phone}
+📋 *Заказ:* ${esc(order.title)}
+👤 *Сотрудник:* ${esc(employee.firstName)} ${esc(employee.lastName)}
+📞 *Телефон:* ${esc(employee.phone)}
 
-Необходимо найти замену. Войдите в панель управления.
+Необходимо найти замену\\. Войдите в панель управления\\.
     `.trim();
 
     await sendMessageToManager(order.creatorId, order.bot.token, order.botId, message);
@@ -249,24 +253,24 @@ export async function notifyEmployeeAssigned(
     });
     
     const message = `
-🎉 *Вы назначены на заказ!*
+🎉 *Вы назначены на заказ\\!*
 
-📍 *${order.title}*
+📍 *${esc(order.title)}*
 
-📅 *Дата:* ${dateStr}
-⏰ *Время:* ${order.workTime}
-📍 *Адрес:* ул. ${order.street}, д. ${order.houseNumber}
-${order.district ? `Район: ${order.district}` : ''}
+📅 *Дата:* ${esc(dateStr)}
+⏰ *Время:* ${esc(order.workTime)}
+📍 *Адрес:* ул\\. ${esc(order.street)}, д\\. ${esc(order.houseNumber)}
+${order.district ? `Район: ${esc(order.district)}` : ''}
 
-💰 *Оплата:* ${order.pricePerPerson} ₽
+💰 *Оплата:* ${esc(order.pricePerPerson)} ₽
 
-Пожалуйста, подтвердите своё участие!
+Пожалуйста, подтвердите своё участие\\!
     `;
     
     const { Markup } = require('telegraf');
     
     await bot.telegram.sendMessage(employee.telegramId, message, {
-      parse_mode: 'Markdown',
+      parse_mode: 'MarkdownV2',
       ...Markup.inlineKeyboard([
         [
           Markup.button.callback('✅ Подтверждаю участие', `ack_${orderId}`),
@@ -312,17 +316,17 @@ export async function notifyEmployeeRejected(
     const message = `
 😔 *Ваш отклик отклонён*
 
-Заказ: *${order.title}*
+Заказ: *${esc(order.title)}*
 
-Не расстраивайтесь! Новые заказы появятся скоро.
+Не расстраивайтесь\\! Новые заказы появятся скоро\\.
     `;
     
     await bot.telegram.sendMessage(employee.telegramId, message, {
-      parse_mode: 'Markdown'
+      parse_mode: 'MarkdownV2'
     });
-    
+
     return { success: true };
-    
+
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return { success: false, error: errorMessage };
@@ -447,19 +451,19 @@ export async function notifyOrderCancelled(
     const message = `
 ❌ *Заказ отменён*
 
-📍 *${order.title}*
-📅 *Дата:* ${dateStr}
+📍 *${esc(order.title)}*
+📅 *Дата:* ${esc(dateStr)}
 
-${reason ? `Причина: ${reason}` : 'Причина не указана'}
+${reason ? `Причина: ${esc(reason)}` : 'Причина не указана'}
 
-Приносим извинения за неудобства.
+Приносим извинения за неудобства\\.
     `;
-    
+
     for (const response of order.responses) {
       if (response.employee.telegramId) {
         try {
           await bot.telegram.sendMessage(response.employee.telegramId, message, {
-            parse_mode: 'Markdown'
+            parse_mode: 'MarkdownV2'
           });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -525,14 +529,14 @@ export async function requestOrderRating(
       const message = `
 ⭐ *Оцените сотрудника*
 
-📍 *Заказ:* ${order.title}
-👤 *Сотрудник:* ${name}
-${emp.phone ? `📞 *Телефон:* ${emp.phone}` : ''}
+📍 *Заказ:* ${esc(order.title)}
+👤 *Сотрудник:* ${esc(name)}
+${emp.phone ? `📞 *Телефон:* ${esc(emp.phone)}` : ''}
       `.trim();
 
       try {
         await bot.telegram.sendMessage(managerTelegramId, message, {
-          parse_mode: 'Markdown',
+          parse_mode: 'MarkdownV2',
           ...Markup.inlineKeyboard([
             [
               Markup.button.callback('⭐ 5', `rate_${orderId}_${emp.id}_5`),
