@@ -87,11 +87,10 @@ ${employee.rating > 0 ? `⭐ *Рейтинг:* ${esc(employee.rating.toFixed(1))
 
     // Получаем Telegram ID менеджера
     const botRecord = await prisma.bot.findUnique({ where: { id: order.botId } });
-    const managerTelegramId = (botRecord as any)?.telegramManagerId
-      ?? (await prisma.contact.findFirst({ where: { botId: order.botId } }))?.telegramId;
+    const managerTelegramId = (botRecord as any)?.telegramManagerId;
 
     if (!managerTelegramId) {
-      console.log('[Notification] No manager telegramId for bot ' + order.botId);
+      console.warn('[Notification] telegramManagerId not set for bot ' + order.botId + '. Response notification skipped.');
       return { success: true };
     }
 

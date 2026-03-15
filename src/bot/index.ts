@@ -729,6 +729,12 @@ async function handleManagerAssign(ctx: BotContext, responseId: string) {
     return ctx.editMessageText('❌ Отклик не найден или уже удалён.');
   }
 
+  // Проверяем, что действие выполняет менеджер бота
+  const managerTelegramId = (response.order.bot as any)?.telegramManagerId;
+  if (managerTelegramId && ctx.from?.id.toString() !== managerTelegramId) {
+    return ctx.editMessageText('⛔ Это действие доступно только менеджеру.');
+  }
+
   if (response.status !== 'PENDING') {
     const label = response.status === 'ASSIGNED' ? 'уже назначен' : 'отклонён/завершён';
     return ctx.editMessageText(`ℹ️ Сотрудник ${label}.`);
@@ -778,11 +784,17 @@ async function handleManagerReject(ctx: BotContext, responseId: string) {
 
   const response = await db.orderResponse.findUnique({
     where: { id: responseId },
-    include: { order: true, employee: true }
+    include: { order: { include: { bot: true } }, employee: true }
   });
 
   if (!response) {
     return ctx.editMessageText('❌ Отклик не найден или уже удалён.');
+  }
+
+  // Проверяем, что действие выполняет менеджер бота
+  const managerTelegramId = (response.order.bot as any)?.telegramManagerId;
+  if (managerTelegramId && ctx.from?.id.toString() !== managerTelegramId) {
+    return ctx.editMessageText('⛔ Это действие доступно только менеджеру.');
   }
 
   if (response.status !== 'PENDING') {
