@@ -53,6 +53,7 @@ function OrdersPageInner() {
     title: "", description: "", clientName: "", clientPhone: "", district: "", street: "",
     houseNumber: "", officeNumber: "", workDate: new Date(), workTime: "09:00", workType: "",
     requiredPeople: 1, pricePerPerson: 0, botId: "", templateId: "",
+    checklists: [] as { text: string; done: boolean }[],
   });
 
   const [orders, setOrders] = useState<any[]>([]);
@@ -63,6 +64,7 @@ function OrdersPageInner() {
   const [bots, setBots] = useState<any[]>([]);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newOrder, setNewOrder] = useState(resetNewOrder());
+  const [newChecklistItem, setNewChecklistItem] = useState("");
 
   // CRM client autocomplete state
   const [clients, setClients] = useState<any[]>([]);
@@ -356,6 +358,43 @@ function OrdersPageInner() {
                 </div>
               </div>
             </div>
+              <div className="space-y-2">
+                <Label>Чек-лист задач</Label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Новый пункт..."
+                    value={newChecklistItem}
+                    onChange={(e) => setNewChecklistItem(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newChecklistItem.trim()) {
+                        e.preventDefault();
+                        setNewOrder({ ...newOrder, checklists: [...newOrder.checklists, { text: newChecklistItem.trim(), done: false }] });
+                        setNewChecklistItem("");
+                      }
+                    }}
+                  />
+                  <Button type="button" variant="outline" onClick={() => {
+                    if (newChecklistItem.trim()) {
+                      setNewOrder({ ...newOrder, checklists: [...newOrder.checklists, { text: newChecklistItem.trim(), done: false }] });
+                      setNewChecklistItem("");
+                    }
+                  }}>
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                {newOrder.checklists.length > 0 && (
+                  <ul className="space-y-1">
+                    {newOrder.checklists.map((item, i) => (
+                      <li key={i} className="flex items-center justify-between text-sm py-1 px-2 bg-muted rounded">
+                        <span>{item.text}</span>
+                        <button type="button" onClick={() => setNewOrder({ ...newOrder, checklists: newOrder.checklists.filter((_, j) => j !== i) })}>
+                          <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Отмена</Button>
               <Button onClick={handleCreateOrder}>Создать заказ</Button>
@@ -415,6 +454,7 @@ function OrdersPageInner() {
                   <TableHead>Статус</TableHead>
                   <TableHead>Оплата</TableHead>
                   <TableHead>Сумма</TableHead>
+                  <TableHead>Сотрудники</TableHead>
                   <TableHead className="text-right">Действия</TableHead>
                 </TableRow>
               </TableHeader>
@@ -454,6 +494,30 @@ function OrdersPageInner() {
                     <TableCell>
                       <div className="font-medium">{formatCurrency(order.pricePerPerson * order.requiredPeople)}</div>
                       <div className="text-xs text-muted-foreground">{order.requiredPeople} × {formatCurrency(order.pricePerPerson)}</div>
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const statusColors: Record<string, string> = {
+                          PENDING: 'bg-yellow-400', ASSIGNED: 'bg-green-500',
+                          CHECKED_IN: 'bg-purple-500', COMPLETED: 'bg-blue-500',
+                        };
+                        const active = order.responses?.filter((r: any) => r.status !== 'REJECTED') ?? [];
+                        if (active.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
+                        return (
+                          <div className="flex items-center gap-0.5 flex-wrap">
+                            {active.slice(0, 5).map((r: any) => (
+                              <div
+                                key={r.id}
+                                title={`${r.employee.firstName} ${r.employee.lastName}`}
+                                className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] text-white font-bold shrink-0 ${statusColors[r.status] ?? 'bg-gray-400'}`}
+                              >
+                                {r.employee.firstName[0]}{r.employee.lastName[0]}
+                              </div>
+                            ))}
+                            {active.length > 5 && <span className="text-xs text-muted-foreground">+{active.length - 5}</span>}
+                          </div>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>

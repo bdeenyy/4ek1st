@@ -654,6 +654,24 @@ async function handleWorkConfirm(ctx: BotContext, telegramId: string, orderId: s
     }
   });
 
+  // Начисляем зарплату сотруднику
+  const salary = response.order.pricePerPerson;
+  if (salary > 0) {
+    await db.financialRecord.create({
+      data: {
+        type: 'EXPENSE',
+        amount: salary,
+        description: `Оплата за заказ: ${response.order.title}`,
+        employeeId: response.employeeId,
+        orderId: orderId,
+      }
+    });
+    await db.employee.update({
+      where: { id: response.employeeId },
+      data: { balance: { increment: salary } }
+    });
+  }
+
   // Освобождаем сотрудника
   await db.employee.update({
     where: { id: response.employeeId },

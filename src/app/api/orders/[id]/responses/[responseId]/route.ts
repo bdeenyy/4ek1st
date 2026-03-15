@@ -23,9 +23,9 @@ export async function PATCH(
     }
     
     const response = await db.orderResponse.update({
-      where: { 
+      where: {
         id: responseId,
-        orderId: id 
+        orderId: id
       },
       data: updateData,
       include: {
@@ -35,6 +35,26 @@ export async function PATCH(
         }
       },
     });
+
+    // При ручном завершении через дашборд — начисляем зарплату
+    if (body.status === "COMPLETED") {
+      const salary = response.order.pricePerPerson;
+      if (salary > 0) {
+        await db.financialRecord.create({
+          data: {
+            type: "EXPENSE",
+            amount: salary,
+            description: `Оплата за заказ: ${response.order.title}`,
+            employeeId: response.employeeId,
+            orderId: id,
+          }
+        });
+        await db.employee.update({
+          where: { id: response.employeeId },
+          data: { balance: { increment: salary } }
+        });
+      }
+    }
 
     // Импортируем сервис уведомлений
     const { 
