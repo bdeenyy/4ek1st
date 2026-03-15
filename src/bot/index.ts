@@ -929,7 +929,7 @@ async function handleProfile(ctx: BotContext) {
     const workCount = await db.workHistory.count({ where: { employeeId: employee.id } });
     if (workCount > 0) {
       const ratingStr = employee.rating > 0
-        ? `⭐ ${employee.rating.toFixed(1)} \\(${workCount} работ\\)`
+        ? `⭐ ${esc(employee.rating.toFixed(1))} \\(${workCount} работ\\)`
         : `${workCount} работ, рейтинг ещё не выставлен`;
       profileText += `\n📈 *Статистика:* ${ratingStr}\n`;
     }
